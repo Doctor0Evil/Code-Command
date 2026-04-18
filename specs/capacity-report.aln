@@ -1,0 +1,54 @@
+---
+# FILE: ./specs/capacity-report.aln
+kind: capacity-report
+version: 0.1.0
+status: draft
+
+meta:
+  description: >
+    Summary of per-tier storage load, utilization, eco usage, and logical
+    capacity bounds for a given SKO mix and planning horizon.
+  horizon_hours: 24
+
+inputs:
+  sko_size_model_spec: "./specs/sko-size-model.aln"
+  tier_capacity_spec: "./specs/tier-capacity.aln"
+  placement_plan_spec: "./specs/placement-plan.aln"
+
+per_tier:
+  - tier_id: T0_hot
+    expected_storage_TiB: 0.0         # E[X_j] / 2^40
+    capacity_TiB: 0.0                 # B_j
+    target_utilization_rho: 0.0       # rho_j
+    expected_utilization_rho: 0.0     # E[X_j] / (B_j)
+    service_rate_mu: 0.0
+    aggregate_arrival_rate_lambda: 0.0
+    rho_queue: 0.0                    # Lambda_j / mu_j
+    expected_wait_seconds: 0.0        # E[W_j]
+    energy_used_kWh: 0.0              # sum_i E_ij
+    carbon_used_kgCO2e: 0.0           # sum_i C_ij
+    within_storage_envelope: true
+    within_eco_envelope: true
+    within_latency_envelope: true
+
+  # ... repeated per tier at runtime ...
+
+logical_capacity:
+  N_logical_max: 0.0                  # N_logical_max(T)
+  kappa_ratio: 0.0                    # logical / physical
+  assumptions:
+    class_proportions:
+      chat_trace: 0.0
+      neural_trace: 0.0
+      model_checkpoint: 0.0
+
+eco_wealth:
+  numerator_utility_sum: 0.0
+  denominator_carbon_sum: 0.0
+  ew_score: 0.0
+
+roh:
+  roh_score: 0.0
+  roh_ceiling: 0.3
+  within_roh_ceiling: true
+...
