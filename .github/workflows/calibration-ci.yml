@@ -1,0 +1,63 @@
+# .github/workflows/calibration-ci.yml
+name: Calibration Toolchain CI
+
+on:
+  pull_request:
+    paths:
+      - "src/calibration/**"
+      - "src/bin/calibration_pipeline.rs"
+      - "src/bin/validate_*"
+      - "schemas/**"
+      - "data/calibration/**"
+      - ".github/workflows/calibration-ci.yml"
+  workflow_dispatch: {}
+
+jobs:
+  calibration-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build calibration binaries
+        run: |
+          cargo build --bins
+
+      - name: Run synthetic calibration pipeline
+        run: |
+          cargo run --bin calibration_pipeline \
+            data/calibration/power_synth.csv \
+            data/calibration/pue_synth.csv \
+            data/calibration/grid_synth.csv \
+            output/hardware-catalog.calibrated.yaml \
+            output/grid-carbon-catalog.calibrated.yaml
+
+      - name: Validate power catalog fragment
+        run: |
+          cargo run --bin validate_power_catalog \
+            schemas/power-catalog-output.v1.schema.json \
+            output/hardware-power-fragment.yaml
+
+      - name: Validate PUE catalog fragment
+        run: |
+          cargo run --bin validate_pue_catalog \
+            schemas/pue-catalog-output.v1.schema.json \
+            output/pue-catalog-fragment.yaml
+
+      - name: Validate grid carbon catalog
+        run: |
+          cargo run --bin validate_grid_carbon_catalog \
+            schemas/grid-carbon-catalog-output.v1.schema.json \
+            output/grid-carbon-catalog.calibrated.yaml
+
+      - name: Archive calibration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-artifacts
+          path: |
+            output/*.yaml
