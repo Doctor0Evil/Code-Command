@@ -1,0 +1,288 @@
+<!-- FILE: ./specs/research_components.aln -->
+---
+cc-invariants: [CC-FILE, CC-LANG, CC-VOL]
+kind: research-components-spec
+version: 0.1.0
+status: draft
+module: core-engine
+libraries:
+  - id: cc-vfs
+  - id: cc-token-walker
+  - id: cc-gh-bridge
+  - id: cc-path
+  - id: cc-sitq
+  - id: cc-base64
+  - id: cc-breaker
+  - id: cc-panic
+  - id: cc-diff
+  - id: cc-policy
+---
+
+# Sovereign Research Components – Library Blueprint [file:2]
+
+This document anchors the ten **custom research components** you outlined into a concrete architecture surface that lives under `core/engine/src` and is consumable by both AI-chat and the validator. [file:2] Each library entry below includes its purpose, a minimal Rust module layout, and a Proof‑of‑Functionality (PoF) test description that you can turn into real unit and integration tests. [file:2]
+
+---
+
+## 1. `cc-vfs` – Sovereign Virtual File System [file:2]
+
+**Purpose:** Provide a fully in‑memory mirror of the GitHub repository, with SHA tracking and path normalization, as the single source of truth for all file operations in the engine. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/vfs/mod.rs` – public `Vfs` type, `FileEntry`, and high‑level API.  
+- `core/engine/src/vfs/path_index.rs` – internal index from normalized path → entry id.  
+- `core/engine/src/vfs/serde_adapter.rs` – JSON (de)serialization for WASM boundary. [file:2]
+
+**Key APIs (sketch):**
+
+- `Vfs::from_snapshot(entries: Vec<VfsEntry>) -> Vfs`  
+- `Vfs::read(&self, path: &str) -> Option<&str>`  
+- `Vfs::write(&mut self, path: &str, content: &str, sha: Option<&str>) -> WriteResult`  
+- `Vfs::list_dir(&self, path: &str) -> Vec<DirEntry>`  
+
+Each call uses the `cc-path` module for normalization and `cc-base64` for GitHub compatibility where needed. [file:2]
+
+**PoF test idea:**
+
+- A test module `core/engine/src/vfs/tests.rs` mounts a mock snapshot (3–5 files) with fake SHAs.  
+- It reads an existing file, updates the content of one file, recomputes a fake SHA (e.g., hash of bytes), and asserts that:
+  - the old SHA is preserved for untouched files;  
+  - the modified file’s SHA is different;  
+  - no disk I/O is performed (pure in‑memory behavior). [file:2]
+
+---
+
+## 2. `cc-token-walker` – Custom Token Walker [file:2]
+
+**Purpose:** Enforce CC‑tier‑1 and tier‑2 invariants via a zero‑dependency tokenizer that works in WASM and `no_std` contexts. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/token_walker/mod.rs` – main token iterator API.  
+- `core/engine/src/token_walker/patterns.rs` – helpers for matching `fn`, `struct`, `use`, `import` forms. [file:2]
+
+**Key APIs (sketch):**
+
+- `TokenWalker::new(code: &str) -> TokenWalker`  
+- `TokenWalker::lines(&self) -> impl Iterator<Item = LineView>`  
+- `fn scan_for_volume(code: &str) -> usize` – counts function/struct definitions for `CC-VOL`.  
+- `fn scan_for_placeholders(code: &str) -> bool` – detects `"..."`, `"rest of code"`, `"omitted"` for `CC-FULL`. [file:2]
+
+**PoF benchmark:**
+
+- A WASM‑targeted benchmark that feeds a synthetic 10k‑line Rust file and asserts:
+  - `scan_for_volume` completes under the 5ms threshold in the browser;  
+  - allocations remain bounded (measured via `wasm-bindgen` test harness or logging). [file:2]
+
+---
+
+## 3. `cc-gh-bridge` – GitHub API Bridge [file:2]
+
+**Purpose:** Provide a sovereign Rust abstraction for GitHub Trees and Contents operations, with all actual network I/O delegated to JS `fetch` via `wasm_bindgen`. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/gh_bridge/mod.rs` – high‑level async API.  
+- `core/engine/src/gh_bridge/types.rs` – `TreeEntry`, `ContentBlob`, error types. [file:2]
+
+**Key APIs (sketch):**
+
+- `async fn get_tree(owner: &str, repo: &str, sha: Option<&str>) -> Result<Vec<TreeEntry>, Error>`  
+- `async fn get_content(owner: &str, repo: &str, path: &str) -> Result<ContentBlob, Error>`  
+- `async fn put_content(owner: &str, repo: &str, path: &str, blob: ContentBlob) -> Result<ContentBlob, Error>`  
+
+JS side provides `wasmFetchFileBase64` and `wasmWriteFileBase64`; the Rust bridge wraps these in a `Result`‑based API, with exponential backoff and a `cc-breaker` guard. [file:2]
+
+**PoF test idea:**
+
+- An integration test that:
+  - injects a mock JS function (via a test harness) that returns a known Base64 payload;  
+  - calls `get_content`, decodes via `cc-base64`, and asserts the returned string;  
+  - simulates a “PUT” by handing data to a mock endpoint and verifying the end‑to‑end read‑modify‑write logic. [file:2]
+
+---
+
+## 4. `cc-path` – Path Sanitizer and Normalizer [file:2]
+
+**Purpose:** Centralize `CC-PATH` and `CC-DEEP` logic in one place, used by `Vfs`, the task queue, and validator. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/path/mod.rs` – public API.  
+- `core/engine/src/path/fuzz.rs` – fuzz targets (behind `cfg(test)` or a separate harness). [file:2]
+
+**Key APIs (sketch):**
+
+- `fn sanitize(input: &str) -> String` – replace backslashes, collapse slashes, resolve `.` and `..`.  
+- `fn depth(path: &str) -> usize` – normalized component count.  
+- `fn is_valid(path: &str) -> bool` – enforce `CC-PATH` (no `\`, no `//`, non‑empty). [file:2]
+
+**PoF fuzz test:**
+
+- A fuzz harness generating random path strings with:
+  - nested `..`, redundant slashes, mixed separators, Unicode.  
+  - asserts that `sanitize` never panics, and `is_valid` is stable (idempotent on re‑sanitized results). [file:2]
+
+---
+
+## 5. `cc-sitq` – Single‑Iteration Task Queue Engine [file:2]
+
+**Purpose:** Execute complex, multi‑step operations (create, update, validate, “build”) in one call, driven by a compact task language or JSON payload, backing `cc_execute_task`. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/sitq/mod.rs` – `TaskQueue` and `Task` types.  
+- `core/engine/src/sitq/parser.rs` – optional `[FILE: ...] [RUN: ...]` script parser. [file:2]
+
+**Key APIs (sketch):**
+
+- `fn execute_json(vfs: &mut Vfs, payload: &str) -> TaskReport` – used by the WASM export.  
+- `fn execute_script(vfs: &mut Vfs, script: &str) -> TaskReport` – optional text DSL.  
+
+`TaskReport` matches the JSON structure documented in `specs/api.aln` for `cc_execute_task`. [file:2]
+
+**PoF transactional test:**
+
+- A test script that:
+  - defines 5 file‑creation tasks;  
+  - forces the 3rd to fail (e.g., invalid path violating `CC-PATH`);  
+  - asserts that after execution, the VFS is identical to the initial snapshot: no partial writes. [file:2]
+
+---
+
+## 6. `cc-base64` – Base64 Codec [file:2]
+
+**Purpose:** Replace external Base64 crates with a pure Rust implementation that works in both `std` and `no_std` contexts. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/base64/mod.rs` – encode/decode with standard alphabet. [file:2]
+
+**Key APIs (sketch):**
+
+- `fn encode(bytes: &[u8]) -> String`  
+- `fn decode(s: &str) -> Result<Vec<u8>, DecodeError>`  
+
+These functions are used by `cc-gh-bridge` and VFS serialization to stay fully sovereign. [file:2]
+
+**PoF round‑trip test:**
+
+- Generate a large random byte buffer;  
+- `encode` then `decode` and assert equality;  
+- include boundary cases: empty slice, non‑padded vs padded inputs. [file:2]
+
+---
+
+## 7. `cc-breaker` – Circuit Breaker [file:2]
+
+**Purpose:** Prevent repeated failing GitHub operations from degrading UX, and expose back‑pressure information to the UI. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/breaker/mod.rs` – `CircuitBreaker` state machine. [file:2]
+
+**Key APIs (sketch):**
+
+- `enum State { Closed, Open, HalfOpen }`  
+- `struct CircuitBreaker { state: State, failures: u32, last_failure: Option<u64>, … }`  
+- `impl CircuitBreaker { async fn call<F, T>(&mut self, op: F) -> Result<T, BreakerError> }`  
+
+Use monotonic time (e.g., provided by JS via an imported function) to manage open → half‑open transitions. [file:2]
+
+**PoF failure‑simulation test:**
+
+- Simulate an operation that fails 3 times;  
+- assert state transitions to `Open` and subsequent calls short‑circuit;  
+- simulate recovery after timeout and verify a half‑open probe and eventual return to `Closed`. [file:2]
+
+---
+
+## 8. `cc-panic` – WASM Panic Hook [file:2]
+
+**Purpose:** Convert Rust panics inside WASM into structured messages for the `OutputPanel` instead of opaque browser `RuntimeError`s. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/panic/mod.rs` – panic hook initialization. [file:2]
+
+**Key APIs (sketch):**
+
+- `pub fn install_panic_hook()` – called from `lib.rs` during WASM startup.  
+
+The hook uses `wasm_bindgen` to call a JS function like `cc_on_panic(message: &str)` that the UI routes to `OutputPanel.logError`. [file:2]
+
+**PoF UI test:**
+
+- A debug‑only export (e.g., `cc_trigger_panic()`) intentionally panics;  
+- browser test asserts the output panel shows a formatted message (file, line, message) without crashing the entire page. [file:2]
+
+---
+
+## 9. `cc-diff` – Myers’ Diff Implementation [file:2]
+
+**Purpose:** Compute minimal diffs between file versions, feeding future patch generation and `CC-CRATE`‑style change analysis. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/diff/mod.rs` – Myers algorithm implementation.  
+- `core/engine/src/diff/unified.rs` – printer for unified diff strings. [file:2]
+
+**Key APIs (sketch):**
+
+- `fn diff_lines(a: &str, b: &str) -> EditScript`  
+- `fn to_unified(a: &str, b: &str) -> String`  
+
+`EditScript` can later be used by AI‑assist modules or patch previews in the UI. [file:2]
+
+**PoF minimality test:**
+
+- Use canonical examples (short strings or small code snippets) where the minimal edit script is known;  
+- assert that `diff_lines` returns that minimal sequence and that `to_unified` matches expected diff text. [file:2]
+
+---
+
+## 10. `cc-policy` – Markdown/ALN Policy Parser [file:2]
+
+**Purpose:** Parse `.aln`/`.md` policy docs (like `specs/invariants.aln` and `specs/architecture.aln`) into a structured representation that can be displayed in the UI and consulted by validators. [file:2]
+
+**Rust layout suggestion:**
+
+- `core/engine/src/policy/mod.rs` – frontmatter parser and tag extractor. [file:2]
+
+**Key APIs (sketch):**
+
+- `fn parse_frontmatter(doc: &str) -> Result<Frontmatter, Error>`  
+- `fn extract_cc_invariants(doc: &str) -> Vec<String>`  
+
+`Frontmatter` includes fields like `cc-invariants`, `kind`, `version`, used to drive validator configuration and documentation panels. [file:2]
+
+**PoF parsing test:**
+
+- Feed a sample `.aln` document with YAML frontmatter;  
+- assert that `cc-invariants` list and tag descriptions match what’s declared in `specs/invariants.aln`. [file:2]
+
+---
+
+## Directory Integration (Engine Surface) [file:2]
+
+These modules attach cleanly to the `core/engine` layout already implied by your WASM design and CC‑API spec. [file:2] A cohesive structure that respects `CC-DEEP` could be:
+
+```text
+core/engine/src/
+  vfs/mod.rs         # cc-vfs
+  token_walker/mod.rs
+  gh_bridge/mod.rs
+  path/mod.rs
+  sitq/mod.rs
+  base64/mod.rs
+  breaker/mod.rs
+  panic/mod.rs
+  diff/mod.rs
+  policy/mod.rs
+  validator.rs
+  task_queue.rs
+  lib.rs
+```
+
+With this in place, every piece of core behavior that previously needed external crates now has a sovereign, testable home, and each module’s PoF becomes a concrete acceptance gate you can wire into CI and your WASM test harness. [file:2]
