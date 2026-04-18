@@ -1,0 +1,213 @@
+<!-- FILE: ./index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Code-Command – Sovereign Coding Agent</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- CC-LANG / CC-FILE are enforced via this header and .html extension -->
+
+<meta name="cc-tags" content="CC-ZERO,CC-FILE,CC-LANG">
+
+<style>
+/* Layout: full-page, zero-setup IDE shell */
+
+html, body {
+margin: 0;
+padding: 0;
+height: 100%;
+width: 100%;
+font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+background-color: #050608;
+color: #e5e7eb;
+overflow: hidden;
+}
+
+#cc-root {
+display: grid;
+grid-template-rows: 40px 1fr 140px;
+height: 100%;
+width: 100%;
+}
+
+#cc-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 0 12px;
+background: #0b0f16;
+border-bottom: 1px solid #111827;
+font-size: 13px;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+}
+
+#cc-header-left {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+
+#cc-header-right {
+display: flex;
+align-items: center;
+gap: 12px;
+}
+
+#cc-main {
+display: grid;
+grid-template-columns: 260px 1fr;
+min-height: 0;
+}
+
+#cc-file-tree {
+border-right: 1px solid #111827;
+background: #020617;
+padding: 8px;
+box-sizing: border-box;
+overflow: auto;
+font-size: 12px;
+}
+
+#cc-editor-container {
+position: relative;
+background: #020617;
+min-height: 0;
+}
+
+#cc-editor {
+position: absolute;
+inset: 0;
+}
+
+#cc-terminal {
+border-top: 1px solid #111827;
+background: #020617;
+padding: 6px 8px;
+box-sizing: border-box;
+}
+
+#cc-terminal-output {
+margin: 0;
+padding: 6px 8px;
+box-sizing: border-box;
+width: 100%;
+height: 100%;
+overflow: auto;
+background: #020617;
+color: #e5e7eb;
+font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+font-size: 12px;
+white-space: pre-wrap;
+}
+
+.cc-badge {
+padding: 2px 6px;
+border-radius: 999px;
+border: 1px solid #1f2937;
+font-size: 10px;
+text-transform: uppercase;
+letter-spacing: 0.08em;
+color: #9ca3af;
+}
+
+.cc-button {
+appearance: none;
+border: 1px solid #1f2937;
+background: #020617;
+color: #e5e7eb;
+border-radius: 999px;
+padding: 4px 10px;
+font-size: 11px;
+cursor: pointer;
+}
+
+.cc-button:hover {
+border-color: #4b5563;
+background: #020617;
+}
+
+.cc-input {
+background: #020617;
+border-radius: 6px;
+border: 1px solid #1f2937;
+padding: 4px 8px;
+font-size: 11px;
+color: #e5e7eb;
+min-width: 180px;
+}
+
+.cc-input::placeholder {
+color: #6b7280;
+}
+
+/* Monaco host placeholder */
+
+.cc-editor-placeholder {
+display: flex;
+align-items: center;
+justify-content: center;
+height: 100%;
+color: #6b7280;
+font-size: 12px;
+}
+
+/* ANSI-like classes for terminal (used by output-panel.js) */
+
+.cc-ansi-info { color: #60a5fa; }
+.cc-ansi-warn { color: #facc15; }
+.cc-ansi-error { color: #f97373; }
+.cc-ansi-ok { color: #4ade80; }
+</style>
+</head>
+<body>
+<div id="cc-root">
+<header id="cc-header">
+<div id="cc-header-left">
+<span class="cc-badge">Code-Command</span>
+<span style="font-size: 11px; color: #9ca3af;">Sovereign Coding Agent</span>
+</div>
+<div id="cc-header-right">
+<input
+id="cc-repo-input"
+class="cc-input"
+type="text"
+autocomplete="off"
+spellcheck="false"
+placeholder="owner/repo (e.g. Doctor0Evil/Code-Command)"
+/>
+<button id="cc-load-repo" class="cc-button">Load Repo</button>
+<button id="cc-run-task" class="cc-button">Run Task</button>
+</div>
+</header>
+
+<main id="cc-main">
+<aside id="cc-file-tree" aria-label="Repository file tree">
+<!-- File tree is populated by js/app/editor/file-tree.js -->
+
+</aside>
+
+<section id="cc-editor-container" aria-label="Code editor">
+<div id="cc-editor">
+<div class="cc-editor-placeholder">
+Loading editor…
+</div>
+</div>
+</section>
+</main>
+
+<section id="cc-terminal" aria-label="Agent output terminal">
+<pre id="cc-terminal-output"></pre>
+</section>
+</div>
+
+<!-- Monaco loader (UI-only, allowed as external) -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.48.0/min/vs/loader.min.js" integrity="sha512-0t2n6b1mnq6sA1Jt98mQ1CzR31vEAPqqCsnkSbtlp0r4bmvQ0nAdOxmH6oEvf9vQKpIwEl7uqcYDs5pVtYfksA==" crossorigin="anonymous"></script>
+
+<!-- Core JS entry (ES module) -->
+
+<script type="module" src="./js/app/main.js"></script>
+</body>
+</html>
