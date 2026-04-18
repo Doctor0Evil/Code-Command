@@ -1,0 +1,60 @@
+---
+# FILE: ./specs/tier-capacity.aln
+kind: tier-capacity-model
+version: 0.1.0
+status: draft
+
+meta:
+  description: >
+    Per-tier physical capacity, utilization thresholds, and eco-budgets
+    for storage and queueing models.
+  units:
+    capacity: tebibytes
+    power: watts_per_TB
+    energy: kWh
+    carbon: kgCO2e
+    rate: skos_per_second
+
+tiers:
+  - id: T0_hot
+    label: "Hot SSD / NVMe"
+    capacity_TiB: 200.0                # B_j in TiB
+    target_utilization_rho: 0.7        # rho_j
+    max_utilization_rho: 0.85
+    service_rate_mu: 500.0             # SKOs/s equivalent
+    eco:
+      pue: 1.1
+      power_idle_W_per_TB: 2.0
+      power_active_W_per_TB: 6.0
+      energy_budget_kWh: 350000.0      # E_j^max over horizon T
+      carbon_budget_kgCO2e: 140000.0   # C_j^max over T
+      grid_carbon_intensity_kg_per_kWh: 0.4
+
+  - id: T1_warm
+    label: "Warm object storage"
+    capacity_TiB: 5000.0
+    target_utilization_rho: 0.8
+    max_utilization_rho: 0.9
+    service_rate_mu: 200.0
+    eco:
+      pue: 1.2
+      power_idle_W_per_TB: 0.8
+      power_active_W_per_TB: 3.0
+      energy_budget_kWh: 1200000.0
+      carbon_budget_kgCO2e: 360000.0
+      grid_carbon_intensity_kg_per_kWh: 0.3
+
+  - id: T2_cold
+    label: "Cold archival"
+    capacity_TiB: 50000.0
+    target_utilization_rho: 0.9
+    max_utilization_rho: 0.98
+    service_rate_mu: 20.0
+    eco:
+      pue: 1.1
+      power_idle_W_per_TB: 0.1
+      power_active_W_per_TB: 0.5
+      energy_budget_kWh: 2000000.0
+      carbon_budget_kgCO2e: 200000.0
+      grid_carbon_intensity_kg_per_kWh: 0.1
+...
