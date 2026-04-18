@@ -1,0 +1,30 @@
+---
+// FILE: ./config/vault-risk-posture.v1.yaml
+// CC-LANG: md
+// CC-FILE: config/vault-risk-posture.v1.yaml
+// CC-DEEP: ./config/vault-risk-posture.v1.yaml
+
+version: 1
+vaults:
+  - vault_id: "phx-vault-a"
+    jurisdiction: "us-az"
+    baseline_risk_score: 0.12
+    physical_security_score: 0.90
+    network_exposure_score: 0.35
+    operator_trust_score: 0.88
+    certification:
+      - "iso27001"
+      - "soc2_type2"
+    max_allowed_roh_for_neural: 0.25
+    max_allowed_roh_for_standard: 0.35
+  - vault_id: "ffm-vault-b"
+    jurisdiction: "eu-de"
+    baseline_risk_score: 0.08
+    physical_security_score: 0.93
+    network_exposure_score: 0.28
+    operator_trust_score: 0.92
+    certification:
+      - "iso27001"
+      - "gdpr_art_32"
+    max_allowed_roh_for_neural: 0.20
+    max_allowed_roh_for_standard: 0.30
