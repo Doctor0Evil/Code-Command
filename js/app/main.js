@@ -59,6 +59,7 @@ async function bootstrap() {
 function wireControls() {
   const loadButton = document.getElementById("cc-load-repo");
   const runTaskButton = document.getElementById("cc-run-task");
+  const toggleLogsButton = document.getElementById("cc-toggle-logs");
   const repoInput = document.getElementById("cc-repo-input");
 
   loadButton.addEventListener("click", async () => {
@@ -77,6 +78,10 @@ function wireControls() {
 
   runTaskButton.addEventListener("click", async () => {
     await runCurrentTask();
+  });
+
+  toggleLogsButton.addEventListener("click", () => {
+    outputPanel.toggleLogs();
   });
 }
 

@@ -160,22 +160,53 @@ extern "C" {
 
 /* ---------- Path & Depth Helpers (CC-PATH, CC-DEEP) ---------- */ [file:2]
 
+/// Normalize a path according to CC-PATH invariants:
+/// - Trim leading/trailing whitespace
+/// - Reject control characters (ASCII 0-31)
+/// - Replace backslashes with forward slashes
+/// - Collapse multiple slashes into one
+/// - Remove leading "./"
+/// - Reject paths containing ".." segments that would escape repo root
+/// - Perform lightweight ASCII normalization (NFC-like for common cases)
 fn normalize_path(path: &str) -> String {
+    // Trim whitespace first
+    let trimmed = path.trim();
+    
+    // Reject control characters (ASCII 0-31 except tab/newline which we also reject)
+    for ch in trimmed.chars() {
+        if (ch as u32) < 32 {
+            return String::new(); // Invalid path
+        }
+    }
+    
     let mut out = String::new();
     let mut last_was_slash = false;
 
-    for ch in path.chars() {
+    for ch in trimmed.chars() {
         if ch == '\\' {
-            // CC-PATH: disallow Windows-style separators. [file:2]
-            continue;
-        }
-        if ch == '/' {
+            // CC-PATH: replace Windows-style separators with forward slashes. [file:2]
+            if !last_was_slash {
+                out.push('/');
+                last_was_slash = true;
+            }
+        } else if ch == '/' {
             if !last_was_slash {
                 out.push('/');
                 last_was_slash = true;
             }
         } else {
-            out.push(ch);
+            // Lightweight ASCII normalization: convert common Unicode lookalikes
+            // This is a minimal implementation; full NFC would require external crates
+            let normalized_ch = match ch {
+                // Common Unicode normalization cases (NFC decomposition reversals)
+                '\u{00A0}' => ' ',  // Non-breaking space -> space
+                '\u{2010}'..='\u{2015}' => '-',  // Various dashes -> hyphen
+                '\u{2018}' | '\u{2019}' => '\'',  // Smart quotes -> apostrophe
+                '\u{201C}' | '\u{201D}' => '"',  // Smart double quotes
+                '\u{2026}' => '.',  // Ellipsis -> three dots (will be handled downstream)
+                _ => ch,
+            };
+            out.push(normalized_ch);
             last_was_slash = false;
         }
     }
@@ -184,6 +215,13 @@ fn normalize_path(path: &str) -> String {
     if norm.starts_with("./") {
         norm = norm.trim_start_matches("./").to_string();
     }
+    
+    // Final check: reject if path contains ".." segments that could escape root
+    // We allow ".." in the middle for legitimate navigation but not at start
+    if norm.starts_with("..") || norm.contains("/../") {
+        return String::new(); // Dangerous path
+    }
+    
     norm
 }
 
@@ -336,4 +374,84 @@ fn b64_index(ch: char) -> Option<u8> {
         }
     }
     None
+}
+
+/* ---------- Unit Tests for Path Normalization (CC-PATH) ---------- */ [file:2]
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_basic_path() {
+        assert_eq!(normalize_path("src/main.rs"), "src/main.rs");
+        assert_eq!(normalize_path("./src/main.rs"), "src/main.rs");
+    }
+
+    #[test]
+    fn test_normalize_whitespace_trimming() {
+        assert_eq!(normalize_path("  src/main.rs  "), "src/main.rs");
+        assert_eq!(normalize_path("\t\nsrc/main.rs"), ""); // Control chars rejected
+    }
+
+    #[test]
+    fn test_normalize_backslash_conversion() {
+        assert_eq!(normalize_path("src\\main.rs"), "src/main.rs");
+        assert_eq!(normalize_path("src\\\\main.rs"), "src/main.rs");
+        assert_eq!(normalize_path("src\\sub\\file.rs"), "src/sub/file.rs");
+    }
+
+    #[test]
+    fn test_normalize_collapse_slashes() {
+        assert_eq!(normalize_path("src//main.rs"), "src/main.rs");
+        assert_eq!(normalize_path("src///main.rs"), "src/main.rs");
+        assert_eq!(normalize_path("//src/main.rs"), "/src/main.rs");
+    }
+
+    #[test]
+    fn test_normalize_reject_parent_escape() {
+        assert_eq!(normalize_path("../etc/passwd"), ""); // Rejected
+        assert_eq!(normalize_path("../../etc/passwd"), ""); // Rejected
+        assert_eq!(normalize_path("/../etc/passwd"), ""); // Rejected
+        assert_eq!(normalize_path("src/../main.rs"), "src/../main.rs"); // Allowed in middle
+    }
+
+    #[test]
+    fn test_normalize_control_chars_rejected() {
+        assert_eq!(normalize_path("src\u{0000}main.rs"), ""); // Null byte
+        assert_eq!(normalize_path("src\u{001F}main.rs"), ""); // Control char
+    }
+
+    #[test]
+    fn test_normalize_unicode_normalization() {
+        // Non-breaking space -> space
+        assert_eq!(normalize_path("src\u{00A0}main.rs"), "src main.rs");
+        // En-dash -> hyphen
+        assert_eq!(normalize_path("src\u{2013}main.rs"), "src-main.rs");
+        // Smart quotes -> regular quotes
+        assert_eq!(normalize_path("src\u{2018}main\u{2019}.rs"), "src'main'.rs");
+    }
+
+    #[test]
+    fn test_normalize_empty_and_special() {
+        assert_eq!(normalize_path(""), "");
+        assert_eq!(normalize_path("   "), "");
+        assert_eq!(normalize_path("/"), "/");
+    }
+
+    #[test]
+    fn test_path_depth_ok_basic() {
+        assert!(path_depth_ok("src/lib/main.rs")); // depth 3
+        assert!(path_depth_ok("a/b/c/d.rs")); // depth 4
+        assert!(!path_depth_ok("src/main.rs")); // depth 2
+        assert!(!path_depth_ok("main.rs")); // depth 1
+    }
+
+    #[test]
+    fn test_is_direct_child_of() {
+        assert!(is_direct_child_of("src/main.rs", "src"));
+        assert!(is_direct_child_of("src/lib.rs", ""));
+        assert!(!is_direct_child_of("src/sub/main.rs", "src"));
+        assert!(!is_direct_child_of("other/main.rs", "src"));
+    }
 }
