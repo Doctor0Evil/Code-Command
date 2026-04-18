@@ -1,4 +1,3 @@
-// FILE: ./policy/invariants/code-command-invariants.md
 ---
 cc-invariants: [CC-VOL, CC-LANG, CC-CRATE, CC-FILE, CC-FULL, CC-DEEP, CC-ZERO, CC-PATH, CC-SOV, CC-NAV]
 status: draft
@@ -28,29 +27,29 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
 
 ---
 
-## CC-LANG — Sovereign Stack
+## CC-LANG — Sovereign Stack (Only Python Disallowed)
 
-**Intent:** Code‑Command uses only the sovereign language stack: Rust, JavaScript, C++, and ALN/Markdown for policy, with Rust’s required TOML manifests allowed.
+**Intent:** Code‑Command uses a broad, sovereign language stack; **only Python is explicitly forbidden** to maintain a strict separation from common scripting ecosystems and to encourage the use of Rust, JavaScript, C++, and policy languages.
 
 **Invariant:**
 
-- Allowed source/policy extensions include:
-  - `.rs`, `.js`, `.jsx` (if desired), `.cpp`, `.cc`, `.h`, `.hpp`, `.aln`, `.md`.
-- Allowed **special** TOML files (for Rust tooling compatibility):
-  - `Cargo.toml` at package or workspace roots.
-  - Optionally `Cargo.lock` if present.
-- Disallowed extensions include (but are not limited to):
-  - `.py`, `.ts`, `.tsx`, `.go`, `.rb`, `.yaml`, `.yml`.
-- Arbitrary `.toml` files (other than `Cargo.toml` / `Cargo.lock`) are discouraged unless explicitly documented as part of Code‑Command’s own config.
+- **Disallowed extension:** `.py` (Python source files).
+- **All other extensions are permitted**, including but not limited to:
+  - `.rs`, `.js`, `.jsx`, `.ts`, `.tsx`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx`
+  - `.go`, `.rb`, `.java`, `.kt`, `.swift`, `.cs`, `.php`, etc.
+  - `.toml`, `.yaml`, `.yml`, `.json`, `.xml`, `.ini`, `.cfg`
+  - `.md`, `.aln`, `.txt`, `.adoc`, `.rst`
+  - Shell scripts (`.sh`, `.bash`, `.zsh`), Makefiles, Dockerfiles, etc.
+- **Rationale:** This narrow exclusion simplifies validation while preserving Code‑Command’s original ethos: Python is disallowed to avoid reliance on its vast external package ecosystem, which often contradicts the `CC-SOV` (no externals) principle. All other languages are acceptable because they either align with the core stack (Rust, JS, C++) or are used only as configuration/data formats.
 
 **Validation Sketch:**
 
-- For each file:
-  - If extension is one of the allowed source/policy extensions, accept.
-  - If extension is `.toml` or `.lock`, only accept if filename is `Cargo.toml` or `Cargo.lock`.
-  - Reject other extensions in a denylist (e.g., `.py`, `.ts`, `.tsx`, `.go`, `.rb`, `.yaml`, `.yml`).
-- Optionally scan file content for signatures of unsupported languages to catch mis‑labeled files.
-- Fail CC‑LANG if any unsupported extension or invalid `.toml` usage is detected.
+- For each file in the repository or artifact:
+  - Check the file extension.
+  - If the extension is `.py` (case‑insensitive), fail `CC-LANG`.
+  - Otherwise, pass.
+- Optionally, scan shebang lines or file headers for `python` references to catch misnamed files, but this is not required for baseline compliance.
+- Fail `CC-LANG` only if a `.py` file is present.
 
 ---
 
@@ -185,7 +184,7 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
   - Import or require external crates/libraries not defined within Code‑Command.
   - Reference external SaaS APIs or proprietary SDKs as dependencies.
 - Code MAY:
-  - Use standard libraries for Rust/JS/CPP.
+  - Use standard libraries for Rust/JS/CPP (or any allowed language).
   - Use internal modules (for example, `mod core`, `crate::invariants`, local `./` imports).
 
 **Validation Sketch:**
@@ -211,5 +210,3 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
 - Search for functions with names or signatures matching navigation semantics (for example, `walk`, `mount`, `unmount`, `list_dir`, `scan_tree`).
 - Confirm that they use standard library primitives or direct HTTP calls, not external navigation packages.
 - Fail CC‑NAV if such custom logic is absent or replaced by external tools.
-
----
