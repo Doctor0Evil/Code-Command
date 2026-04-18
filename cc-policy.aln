@@ -1,4 +1,4 @@
-***
+---
 cc-invariants: [CC-FILE, CC-LANG, CC-FULL, CC-SOV]
 kind: policy-surface
 version: 0.1.0
@@ -19,4 +19,279 @@ tags:
   CC-SOV:   active
   CC-NAV:   active
 source-of-truth: Code-Command Sovereign Coding Agent Invariant Policy
-***
+---
+
+# Code-Command Invariant Policy Surface
+
+This document is the unified policy contract for Code-Command and defines all CC‑ tags, their meanings, and the minimal validation logic each tag requires.  
+It is intended to be both human-readable and trivially machine-parsable by the CC-Engine validator.
+
+## Tag Table (Human View)
+
+| Tag ID   | Name                          | Short Description                                                   |
+|---------|-------------------------------|---------------------------------------------------------------------|
+| CC-VOL  | Volume Lock                   | Response must contain enough concrete code units.                  |
+| CC-LANG | Sovereign Stack               | Only allowed file types and language syntax.                       |
+| CC-CRATE| Fresh Logic                   | Each delta introduces new code constructs.                         |
+| CC-FILE | Destination Strict            | Every file declares its path via a header.                         |
+| CC-FULL | No Excerpts                   | No placeholders or truncated code.                                 |
+| CC-DEEP | Depth‑3 Struct                | Core modules live in 3‑level‑deep paths.                           |
+| CC-ZERO | Zero‑Setup Boot               | No setup/install or env‑dependent logic in entrypoints.            |
+| CC-PATH | Path Integrity                | Paths must be normalized, stable, and portable.                    |
+| CC-SOV  | Sovereign Only (No Externals) | No external crates, tools, or remote services.                     |
+| CC-NAV  | Custom Navigation Mount Logic | Repo navigation implemented with custom walkers.                   |
+
+---
+
+## Machine Contract: Per‑Tag Invariants and Pseudocode
+
+Each subsection below defines a tag in three layers: natural language intent, minimal machine rule, and pseudocode for the validator.
+
+### CC-VOL – Volume Lock
+
+**Intent**  
+Responses and artifacts must contain a high volume of concrete code units, not a handful of illustrative samples.
+
+**Machine Rule**  
+Count distinct function-like declarations and automation blocks; fail if below a minimum threshold `N_min`.
+
+**Pseudocode (Rust-like)**
+
+```txt
+fn check_cc_vol(code: &str, n_min: usize) -> bool {
+  let mut count = 0;
+  for line in code.lines() {
+    if looks_like_function_decl(line) {
+      count += 1;
+    }
+  }
+  count >= n_min
+}
+```
+
+---
+
+### CC-LANG – Sovereign Stack
+
+**Intent**  
+All files and snippets must use only the sovereign stack: Rust, JavaScript, C/C++, and ALN/Markdown for policy.
+
+**Machine Rule**  
+Validate file extensions against: `.rs`, `.js`, `.cpp`, `.h`, `.aln`, `.md`.  
+Reject forbidden extensions (`.py`, `.ts`, `.toml`, `.yaml`, etc.) and obvious foreign syntax when needed.
+
+**Pseudocode**
+
+```txt
+fn check_cc_lang(path: &str) -> bool {
+  let ext = extension_of(path);        # "rs", "js", "cpp", ...
+  match ext {
+    "rs" | "js" | "cpp" | "h" | "aln" | "md" => true,
+    _ => false,
+  }
+}
+```
+
+---
+
+### CC-CRATE – Fresh Logic
+
+**Intent**  
+Every iteration or commit must introduce at least one new construct (`struct`, `impl`, `fn`, `mod`, class) that did not exist in the previous state.
+
+**Machine Rule**  
+Compare current code against a prior snapshot; ensure there is at least one new symbol in the set of declarations.
+
+**Pseudocode**
+
+```txt
+fn check_cc_crate(previous: &SymbolSet, current: &SymbolSet) -> bool {
+  let diff = current.minus(previous);
+  !diff.is_empty()
+}
+```
+
+---
+
+### CC-FILE – Destination Strict
+
+**Intent**  
+Every code artifact must declare its destination path explicitly so it can be placed in the repository without ambiguity.
+
+**Machine Rule**  
+Within the first `K` lines, there must be a header like:
+
+- `// FILE: ./path/to/file.rs`
+- `/* FILE: ./path/to/file.rs */`
+- `<!-- FILE: ./path/to/file.rs -->`
+
+**Pseudocode**
+
+```txt
+fn check_cc_file(code: &str) -> Option<String> {
+  for (i, line) in code.lines().enumerate() {
+    if i >= K { break; }
+    if let Some(path) = extract_file_header_path(line) {
+      return Some(path);  # also used by CC-DEEP / CC-PATH
+    }
+  }
+  None
+}
+```
+
+---
+
+### CC-FULL – No Excerpts
+
+**Intent**  
+Responses must not contain ellipses or placeholders that signal omitted code.
+
+**Machine Rule**  
+Reject content containing `...`, `rest of code`, `omitted`, or similar placeholder phrases inside code blocks.
+
+**Pseudocode**
+
+```txt
+fn check_cc_full(code: &str) -> bool {
+  let banned = ["...", "rest of code", "omitted"];
+  for pat in &banned {
+    if code.contains(pat) {
+      return false;
+    }
+  }
+  true
+}
+```
+
+---
+
+### CC-DEEP – Depth‑3 Struct
+
+**Intent**  
+Core modules must live under at least three path segments, shaping a stable, navigable structure.
+
+**Machine Rule**  
+For paths discovered via `CC-FILE`, require at least three non‑empty components after normalization.
+
+**Pseudocode**
+
+```txt
+fn check_cc_deep(path: &str) -> bool {
+  let norm = normalize_path(path);      # reuses CC-PATH logic
+  let parts = split_components(&norm);  # ["core", "engine", "src", "lib.rs"]
+  parts.len() >= 3
+}
+```
+
+---
+
+### CC-ZERO – Zero‑Setup Boot
+
+**Intent**  
+Entry points must run directly from the repository with no install, setup, or environment assumptions.
+
+**Machine Rule**  
+Scan entry files (`index.html`, `lib.rs`, `main.js`, etc.) for disallowed tokens like `install`, `setup`, `std::env::temp_dir`, environment variables, or explicit package‑manager commands.
+
+**Pseudocode**
+
+```txt
+fn check_cc_zero(code: &str) -> bool {
+  let banned = ["install", "setup", "std::env::temp_dir", "pip ", "npm ", "cargo install"];
+  for pat in &banned {
+    if code.contains(pat) {
+      return false;
+    }
+  }
+  true
+}
+```
+
+---
+
+### CC-PATH – Path Integrity
+
+**Intent**  
+All paths must be well‑formed, portable, and free of misleading constructs.
+
+**Machine Rule**  
+Reject any path strings containing backslashes (`\`), double slashes (`"//"`) in the middle, or merged filename patterns.
+
+**Pseudocode**
+
+```txt
+fn check_cc_path(path: &str) -> bool {
+  if path.contains('\\') { return false; }
+  if path.contains("//") { return false; }
+  !path.trim().is_empty()
+}
+```
+
+---
+
+### CC-SOV – Sovereign Only (No Externals)
+
+**Intent**  
+No external crates, libraries, or remote services may be used for core logic; everything must be custom and in‑repo.
+
+**Machine Rule**  
+Scan import forms (`use`, `include`, `require`, `import`) and fail if they reference known external ecosystems (for example `reqwest`, `serde_json`, `openai`, cloud SDKs) or domains outside the Code-Command namespace.
+
+**Pseudocode**
+
+```txt
+fn check_cc_sov(code: &str) -> bool {
+  let banned = ["reqwest", "serde_json", "openai", "axios", "tree-sitter", "syn"];
+  for line in code.lines() {
+    if is_import_like(line) {
+      for pat in &banned {
+        if line.contains(pat) {
+          return false;
+        }
+      }
+    }
+  }
+  true
+}
+```
+
+---
+
+### CC-NAV – Custom Navigation Mount Logic
+
+**Intent**  
+Directory traversal and repo navigation must be implemented with custom, sovereign logic (for example `std::fs::read_dir` recursion or VFS equivalents).
+
+**Machine Rule**  
+Require at least one function that matches the project’s navigation signature (for example `walk_dir(path: &Path) -> Vec<PathBuf>`) and reject use of generic traversal libraries.
+
+**Pseudocode**
+
+```txt
+fn check_cc_nav(code: &str) -> bool {
+  let has_custom_nav = code.contains("fn walk_dir") && code.contains("read_dir");
+  let banned = ["walkdir::", "globwalk::"];
+  if !has_custom_nav { return false; }
+  for pat in &banned {
+    if code.contains(pat) {
+      return false;
+    }
+  }
+  true
+}
+```
+
+---
+
+## How Validators Consume This File
+
+The CC-Engine validator reads this file once at startup (or at build time) to know which tags exist and which are active.  
+It treats the YAML frontmatter as the authoritative list of tags and uses the per‑tag sections as documentation while keeping concrete logic in `core/invariants/src/checks.rs`.
+
+A minimal loader only needs to:
+
+1. Parse the frontmatter lines until the `---` terminator.  
+2. Extract `tags.*: active` to build the active tag set.  
+3. Pass that set into the validator when evaluating artifacts or CI runs.
+
+From there, each `check_cc_*` function can use the pseudocode above as its reference contract, guaranteeing that AI‑Chat, browser, and CI all share the same invariant definitions.
