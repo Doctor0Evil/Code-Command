@@ -1,0 +1,49 @@
+# FILE: ./.github/workflows/cc-invariants.yml
+name: CC Invariants
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  cc-invariants:
+    name: Validate CC- Invariants
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain (stable)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+
+      - name: Set up Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build CC-Engine WebAssembly module
+        working-directory: ./core/engine
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --target wasm32-unknown-unknown --release
+          mkdir -p ../../dist
+          cp ./target/wasm32-unknown-unknown/release/cc-engine.wasm ../../dist/cc-engine.wasm
+
+      - name: Install local validator dependencies
+        run: |
+          cd .github/workflows
+          if [ -f "package.json" ]; then
+            npm install
+          fi
+
+      - name: Run CC Invariant Validator on changed files
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          node .github/workflows/cc_invariants_runner.mjs
