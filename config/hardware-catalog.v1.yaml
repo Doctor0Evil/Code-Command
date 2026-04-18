@@ -1,0 +1,29 @@
+---
+// FILE: ./config/hardware-catalog.v1.yaml
+// CC-LANG: md
+// CC-FILE: config/hardware-catalog.v1.yaml
+// CC-DEEP: ./config/hardware-catalog.v1.yaml
+
+version: 1
+tiers:
+  - tier_id: "nvme_hot"
+    media_class: "vnvme-proportional-v1"
+    P_idle_w_per_tb: 0.40
+    P_active_w_per_tb: 2.50
+    PUE: 1.18
+    notes: "virtual NVMe mapped to energy-proportional storage"
+  - tier_id: "ssd_warm"
+    media_class: "ssd-tier-v1"
+    P_idle_w_per_tb: 0.80
+    P_active_w_per_tb: 3.00
+    PUE: 1.26
+  - tier_id: "hdd_cold"
+    media_class: "hdd-tier-v1"
+    P_idle_w_per_tb: 0.50
+    P_active_w_per_tb: 1.80
+    PUE: 1.35
+  - tier_id: "tape_archive"
+    media_class: "tape-lto-v1"
+    P_idle_w_per_tb: 0.02
+    P_active_w_per_tb: 0.15
+    PUE: 1.05
