@@ -1,0 +1,63 @@
+--- 
+# FILE: ./specs/sko-size-model.aln
+kind: sko-size-model
+version: 0.1.0
+status: draft
+
+meta:
+  description: >
+    SKO class-specific size and arrival model for capacity and queueing analysis.
+  horizon_hours: 24          # Planning horizon T in hours
+  units:
+    size: bytes
+    rate: skos_per_hour
+
+classes:
+  - id: chat_trace
+    label: "Interactive chat trace"
+    arrival_rate_lambda: 120.0       # SKOs/hour for this class
+    size_distribution:
+      kind: lognormal
+      mean_bytes: 65536              # E[S | chat_trace]
+      stddev_bytes: 32768
+    placement_preferences:
+      # r_{k,j} fractions over tiers
+      tiers:
+        - tier_id: T0_hot
+          fraction: 0.8
+        - tier_id: T1_warm
+          fraction: 0.2
+
+  - id: neural_trace
+    label: "Neural / biosignal trace"
+    arrival_rate_lambda: 12.0
+    size_distribution:
+      kind: lognormal
+      mean_bytes: 524288000          # ~500 MB
+      stddev_bytes: 262144000
+    placement_preferences:
+      tiers:
+        - tier_id: T1_warm
+          fraction: 0.6
+        - tier_id: T2_cold
+          fraction: 0.4
+
+  - id: model_checkpoint
+    label: "Model checkpoint or embedding shard"
+    arrival_rate_lambda: 1.0
+    size_distribution:
+      kind: point
+      value_bytes: 10737418240       # 10 GiB fixed size
+    placement_preferences:
+      tiers:
+        - tier_id: T1_warm
+          fraction: 0.3
+        - tier_id: T2_cold
+          fraction: 0.7
+
+# Optional default distribution if class-specific info is missing
+default_size_distribution:
+  kind: lognormal
+  mean_bytes: 1048576
+  stddev_bytes: 524288
+...
