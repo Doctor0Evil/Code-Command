@@ -1,0 +1,48 @@
+---
+# FILE: ./specs/placement-plan.aln
+kind: placement-plan
+version: 0.1.0
+status: draft
+
+meta:
+  description: >
+    Mapping from SKO classes to storage tiers, including routing fractions,
+    latency constraints, and utility weights for eco-wealth.
+  horizon_hours: 24
+  units:
+    rate: skos_per_hour
+    size: bytes
+    latency: seconds
+
+defaults:
+  latency_sla_seconds: 1.0
+  roh_ceiling: 0.3
+
+placements:
+  - sko_class_id: chat_trace
+    utility_weight: 1.0          # U_i weight for eco-wealth
+    latency_sla_seconds: 0.5
+    tiers:
+      - tier_id: T0_hot
+        fraction: 0.9            # r_{chat_trace, T0}
+      - tier_id: T1_warm
+        fraction: 0.1
+
+  - sko_class_id: neural_trace
+    utility_weight: 2.0
+    latency_sla_seconds: 5.0
+    tiers:
+      - tier_id: T1_warm
+        fraction: 0.7
+      - tier_id: T2_cold
+        fraction: 0.3
+
+  - sko_class_id: model_checkpoint
+    utility_weight: 3.0
+    latency_sla_seconds: 30.0
+    tiers:
+      - tier_id: T1_warm
+        fraction: 0.4
+      - tier_id: T2_cold
+        fraction: 0.6
+...
