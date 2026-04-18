@@ -2,6 +2,29 @@
 
 use std::collections::HashMap;
 
+/// Per-class placement entry: routing fractions r_{k,j} and policy knobs.
+#[derive(Clone, Debug)]
+pub struct PlacementTierFraction {
+    pub tier_id: String,
+    pub fraction: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlacementClassEntry {
+    pub sko_class_id: String,
+    pub utility_weight: f64,
+    pub latency_sla_seconds: f64,
+    pub tiers: Vec<PlacementTierFraction>,
+}
+
+/// Full placement plan model.
+#[derive(Clone, Debug)]
+pub struct PlacementPlan {
+    pub horizon_hours: f64,
+    pub roh_ceiling: f64,
+    pub entries: Vec<PlacementClassEntry>,
+}
+
 /// SKO size distribution kind.
 #[derive(Clone, Debug)]
 pub enum SizeDistKind {
@@ -17,7 +40,9 @@ pub struct SizeDistribution {
     pub stddev_bytes: f64,
 }
 
-/// Placement preferences r_{k,j}.
+/// Placement preferences r_{k,j} as originally carried on SKO classes.
+/// (You can keep using this for the legacy sko-size-model spec, while
+/// PlacementPlan is the newer, explicit placement schema.)
 #[derive(Clone, Debug)]
 pub struct PlacementPreference {
     pub tier_id: String,
@@ -29,7 +54,7 @@ pub struct PlacementPreference {
 pub struct SkoClass {
     pub id: String,
     pub label: String,
-    pub arrival_rate_lambda: f64,            // SKOs per hour
+    pub arrival_rate_lambda: f64, // SKOs per hour
     pub size_dist: SizeDistribution,
     pub placements: Vec<PlacementPreference>,
 }
@@ -61,7 +86,7 @@ pub struct TierCapacity {
     pub capacity_TiB: f64,
     pub target_utilization_rho: f64,
     pub max_utilization_rho: f64,
-    pub service_rate_mu: f64,   // SKOs per second
+    pub service_rate_mu: f64, // SKOs per second
     pub eco: TierEco,
 }
 
@@ -71,7 +96,7 @@ pub struct TierCapacityModel {
     pub tiers: Vec<TierCapacity>,
 }
 
-/// Per-tier computed metrics, aligned with capacity-report.
+/// Per-tier computed metrics, aligned with CapacityReport.
 #[derive(Clone, Debug)]
 pub struct TierReport {
     pub tier_id: String,
