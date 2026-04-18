@@ -10,7 +10,7 @@ mod logger;
 mod github_fallback;
 
 use validator::{ValidationRequest, ValidationResult};
-use vfs::{Vfs, VirtualFileSystem};
+use vfs::{Vfs, VirtualFileSystem, CC_VFS_ID};
 use taskqueue::TaskQueue;
 use logger::{global_log, LogLevel};
 
@@ -20,6 +20,85 @@ use wasm_bindgen::prelude::*;
 // Global VFS instance for the WASM engine.
 // Safety: accessed only inside unsafe blocks in exported functions.
 static mut VFS: Option<Vfs> = None;
+
+//
+// Canonical cc-* WASM exports (short names, no logging).
+// These map directly onto the CC-API surface described in specs/api.aln.
+//
+
+#[wasm_bindgen]
+pub fn ccinitvfs(serialized_vfs_json: &str) {
+    let vfs = Vfs::from_json(serialized_vfs_json);
+    unsafe {
+        VFS = Some(vfs);
+    }
+}
+
+#[wasm_bindgen]
+pub fn ccreadfile(path: &str) -> String {
+    unsafe {
+        if let Some(vfs) = &VFS {
+            return vfs.read(path).unwrap_or_default();
+        }
+    }
+    String::new()
+}
+
+#[wasm_bindgen]
+pub fn ccwritefile(path: &str, content: &str, sha: &str) -> bool {
+    unsafe {
+        if let Some(vfs) = &mut VFS {
+            return vfs.write(path, content, sha);
+        }
+    }
+    false
+}
+
+#[wasm_bindgen]
+pub fn cclistdir(path: &str) -> String {
+    unsafe {
+        if let Some(vfs) = &VFS {
+            return vfs.list(path);
+        }
+    }
+    "[]".to_string()
+}
+
+#[wasm_bindgen]
+pub fn ccvalidatecode(code: &str, tags_json: &str) -> JsValue {
+    let req = ValidationRequest::from_json(code, tags_json);
+    let result: ValidationResult = validator::run_validation(req);
+    JsValue::from_str(&result.to_json())
+}
+
+#[wasm_bindgen]
+pub fn ccexecutetask(task_json: &str) -> String {
+    let mut queue = TaskQueue::from_json(task_json);
+
+    unsafe {
+        if let Some(vfs) = &mut VFS {
+            let report = queue.execute(vfs);
+            return report.to_json();
+        }
+    }
+
+    TaskQueue::empty_failure("VFS not initialized.").to_json()
+}
+
+/// Report the active cc-vfs identity string.
+///
+/// JS and CI can call this to assert that the engine is exposing the
+/// canonical cc-vfs implementation and version.
+#[wasm_bindgen]
+pub fn ccvfs_id() -> String {
+    CC_VFS_ID.to_string()
+}
+
+//
+// Verbose cc_* exports with structured logging.
+// These wrap the same core behaviors but emit LogEvents for debugging
+// and observability.
+//
 
 /// Initializes the in-memory VFS once per session.
 /// JS can call this to seed the engine with a snapshot of the repo tree.
