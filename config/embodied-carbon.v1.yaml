@@ -1,0 +1,24 @@
+---
+// FILE: ./config/embodied-carbon.v1.yaml
+// CC-LANG: md
+// CC-FILE: config/embodied-carbon.v1.yaml
+// CC-DEEP: ./config/embodied-carbon.v1.yaml
+
+version: 1
+entries:
+  - generation_id: "nvme_2025_gen4"
+    tier_id: "nvme_hot"
+    embodied_kg_co2e_per_tb: 180.0
+    design_lifetime_years: 5.0
+  - generation_id: "ssd_2024_gen3"
+    tier_id: "ssd_warm"
+    embodied_kg_co2e_per_tb: 140.0
+    design_lifetime_years: 6.0
+  - generation_id: "hdd_2023_18tb"
+    tier_id: "hdd_cold"
+    embodied_kg_co2e_per_tb: 90.0
+    design_lifetime_years: 7.0
+  - generation_id: "tape_lto9_2024"
+    tier_id: "tape_archive"
+    embodied_kg_co2e_per_tb: 30.0
+    design_lifetime_years: 10.0
