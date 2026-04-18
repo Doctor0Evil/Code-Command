@@ -1,0 +1,16 @@
+---
+// FILE: ./config/grid-carbon-catalog.v1.yaml
+// CC-LANG: md (YAML payload)
+// CC-FILE: config/grid-carbon-catalog.v1.yaml
+// CC-DEEP: ./config/grid-carbon-catalog.v1.yaml
+
+version: 1
+regions:
+  - region_id: "us-west-phx"
+    provider: "local-file"
+    data_source: "data/grid/us-west-phx-15min.csv"
+    sampling_interval_minutes: 15
+  - region_id: "eu-central-ffm"
+    provider: "local-file"
+    data_source: "data/grid/eu-central-ffm-15min.csv"
+    sampling_interval_minutes: 15
