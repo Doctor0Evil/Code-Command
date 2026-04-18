@@ -40,6 +40,7 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
   - `.toml`, `.yaml`, `.yml`, `.json`, `.xml`, `.ini`, `.cfg`
   - `.md`, `.aln`, `.txt`, `.adoc`, `.rst`
   - Shell scripts (`.sh`, `.bash`, `.zsh`), Makefiles, Dockerfiles, etc.
+- **Rust manifests** (`Cargo.toml`, `Cargo.lock`) are fully permitted and essential for the build system.
 - **Rationale:** This narrow exclusion simplifies validation while preserving Code‑Command’s original ethos: Python is disallowed to avoid reliance on its vast external package ecosystem, which often contradicts the `CC-SOV` (no externals) principle. All other languages are acceptable because they either align with the core stack (Rust, JS, C++) or are used only as configuration/data formats.
 
 **Validation Sketch:**
@@ -48,8 +49,8 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
   - Check the file extension.
   - If the extension is `.py` (case‑insensitive), fail `CC-LANG`.
   - Otherwise, pass.
-- Optionally, scan shebang lines or file headers for `python` references to catch misnamed files, but this is not required for baseline compliance.
-- Fail `CC-LANG` only if a `.py` file is present.
+- Optionally, scan shebang lines (`#!/usr/bin/env python`, `#!/usr/bin/python`) or file headers for `python` references to catch Python files with non‑`.py` extensions. This is not required for baseline compliance but strengthens enforcement.
+- Fail `CC-LANG` only if a `.py` file is present or a shebang indicates Python.
 
 ---
 
@@ -121,13 +122,14 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
 - Paths declared in `FILE` headers MUST have a directory depth of at least three components after normalization.
   - Valid example: `./src/core/agent.rs` → `["src", "core", "agent.rs"]` (depth 3).
   - Invalid example: `./main.rs` → `["main.rs"]` (depth 1).
-- The depth requirement applies to code and core policy files, not necessarily to top‑level meta files like `README.md`.
+- The depth requirement applies to **code and core policy files**; top‑level metadata files (`README.md`, `LICENSE`, `index.html`) are exempt unless they declare a `FILE` header.
+- Paths without a `FILE` header are not subject to this invariant.
 
 **Validation Sketch:**
 
 - Normalize each path (remove `.` and empty segments, split on `/`).
 - Count path components.
-- Fail CC‑DEEP if depth is below the configured minimum (default 3) for files that must obey this rule.
+- Fail CC‑DEEP if depth is below the configured minimum (default 3) for files that declare a `FILE` header.
 
 ---
 
@@ -210,3 +212,5 @@ This document defines the **Code‑Command invariant tags** used as a shared pol
 - Search for functions with names or signatures matching navigation semantics (for example, `walk`, `mount`, `unmount`, `list_dir`, `scan_tree`).
 - Confirm that they use standard library primitives or direct HTTP calls, not external navigation packages.
 - Fail CC‑NAV if such custom logic is absent or replaced by external tools.
+
+**Note:** This invariant applies only to executable code artifacts; policy and documentation files (such as this one) are exempt from the navigation‑logic requirement.
