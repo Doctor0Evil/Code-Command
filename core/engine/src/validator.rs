@@ -2,17 +2,17 @@
 
 use std::collections::HashSet; // Standard library only, satisfies CC-SOV. [file:2]
 
-/// Represents a single validation request coming from the WASM boundary. [file:2]
+/// A single validation request for a code artifact plus tag set. [file:2]
 pub struct ValidationRequest {
     pub code: String,
     pub tags: Vec<String>,
-    /// Optional previous symbol snapshot for CC-CRATE comparisons. [file:2]
+    /// Optional previous symbol snapshot for CC-CRATE. [file:2]
     pub previous_symbols: Vec<String>,
 }
 
 impl ValidationRequest {
+    /// Minimal JSON parser for ["TAG","TAG2"] to avoid external deps. [file:2]
     pub fn from_json(code: &str, tags_json: &str) -> Self {
-        // Minimal, hand-rolled JSON parsing for ["TAG", "TAG2"] form to avoid external crates. [file:2]
         let trimmed = tags_json.trim();
         let inner = trimmed
             .trim_start_matches('[')
@@ -36,7 +36,7 @@ impl ValidationRequest {
     }
 }
 
-/// Result of running CC- invariant checks over a single artifact. [file:2]
+/// Result of applying all requested CC- checks to a single artifact. [file:2]
 pub struct ValidationResult {
     pub ok: bool,
     pub failures: Vec<String>,
@@ -52,12 +52,10 @@ impl ValidationResult {
 
     pub fn fail(&mut self, tag: &str, reason: &str) {
         self.ok = false;
-        self.failures
-            .push(format!("{}: {}", tag, reason));
+        self.failures.push(format!("{}: {}", tag, reason));
     }
 
     pub fn to_json(&self) -> String {
-        // Very small JSON generator: {"ok":true,"failures":["...","..."]} [file:2]
         let mut out = String::new();
         out.push_str("{\"ok\":");
         out.push_str(if self.ok { "true" } else { "false" });
@@ -75,11 +73,16 @@ impl ValidationResult {
     }
 }
 
-/// Runs the full validation pipeline for a request. [file:2]
+/// Main entry for the CC-Engine: run all requested invariant checks. [file:2]
 pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     let mut result = ValidationResult::new();
 
-    let header_path = if req.tags.iter().any(|t| t == "CC-FILE" || t == "CC-DEEP") {
+    // Precompute header path if needed by several tags. [file:2]
+    let need_path = req
+        .tags
+        .iter()
+        .any(|t| t == "CC-FILE" || t == "CC-DEEP" || t == "CC-PATH" || t == "CC-LANG");
+    let header_path = if need_path {
         extract_file_header_path(&req.code)
     } else {
         None
@@ -89,13 +92,19 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
         match tag.as_str() {
             "CC-VOL" => {
                 if !check_cc_vol(&req.code, 3) {
-                    result.fail("CC-VOL", "Insufficient number of concrete function-like declarations.");
+                    result.fail(
+                        "CC-VOL",
+                        "Insufficient number of concrete function-like declarations.",
+                    );
                 }
             }
             "CC-LANG" => {
                 if let Some(path) = &header_path {
                     if !check_cc_lang(path) {
-                        result.fail("CC-LANG", "File extension is not part of the sovereign stack.");
+                        result.fail(
+                            "CC-LANG",
+                            "File extension is not part of the sovereign stack.",
+                        );
                     }
                 }
             }
@@ -103,7 +112,10 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
                 let prev: HashSet<String> = req.previous_symbols.iter().cloned().collect();
                 let current = collect_symbols(&req.code);
                 if !check_cc_crate(&prev, &current) {
-                    result.fail("CC-CRATE", "No new symbols introduced compared to previous snapshot.");
+                    result.fail(
+                        "CC-CRATE",
+                        "No new symbols introduced compared to previous snapshot.",
+                    );
                 }
             }
             "CC-FILE" => {
@@ -113,40 +125,58 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
             }
             "CC-FULL" => {
                 if !check_cc_full(&req.code) {
-                    result.fail("CC-FULL", "Found excerpt or placeholder markers in code.");
+                    result.fail(
+                        "CC-FULL",
+                        "Found excerpt or placeholder markers in code (\"...\", \"rest of code\", \"omitted\").",
+                    );
                 }
             }
             "CC-DEEP" => {
                 if let Some(path) = &header_path {
                     if !check_cc_deep(path) {
-                        result.fail("CC-DEEP", "Path does not satisfy depth >= 3 after normalization.");
+                        result.fail(
+                            "CC-DEEP",
+                            "Path does not satisfy depth >= 3 after normalization.",
+                        );
                     }
                 }
             }
             "CC-ZERO" => {
                 if !check_cc_zero(&req.code) {
-                    result.fail("CC-ZERO", "Entry file contains setup/install/environment references.");
+                    result.fail(
+                        "CC-ZERO",
+                        "Entry file contains setup/install/environment references.",
+                    );
                 }
             }
             "CC-PATH" => {
                 if let Some(path) = &header_path {
                     if !check_cc_path(path) {
-                        result.fail("CC-PATH", "Path contains backslashes, double slashes, or is empty.");
+                        result.fail(
+                            "CC-PATH",
+                            "Path contains backslashes, double slashes, or is empty.",
+                        );
                     }
                 }
             }
             "CC-SOV" => {
                 if !check_cc_sov(&req.code) {
-                    result.fail("CC-SOV", "Detected external crates, tools, or services in imports.");
+                    result.fail(
+                        "CC-SOV",
+                        "Detected external crates, tools, or services in imports.",
+                    );
                 }
             }
             "CC-NAV" => {
                 if !check_cc_nav(&req.code) {
-                    result.fail("CC-NAV", "Custom navigation function not found or external walker detected.");
+                    result.fail(
+                        "CC-NAV",
+                        "Custom navigation function not found or external walker detected.",
+                    );
                 }
             }
             _ => {
-                // Unknown tag: ignore gracefully for forward-compatibility. [file:2]
+                // Unknown tag: ignore for forward-compatibility. [file:2]
             }
         }
     }
@@ -154,10 +184,10 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     result
 }
 
-/* ---------- Tier 1 Checks: Simple String / Byte Scans ---------- */ [file:2]
+/* ---------- Tier 1: Simple string / byte scans ---------- */ [file:2]
 
+/// Extracts the FILE header path from the first 10 lines if present. [file:2]
 fn extract_file_header_path(code: &str) -> Option<String> {
-    // Look for a FILE header in the first 10 lines: // FILE: ./path, /* FILE: ./path */, <!-- FILE: ./path -->. [file:2]
     for (i, line) in code.lines().enumerate() {
         if i >= 10 {
             break;
@@ -180,7 +210,10 @@ fn check_cc_vol(code: &str, n_min: usize) -> bool {
         if t.starts_with("fn ")
             || t.starts_with("pub fn ")
             || t.starts_with("struct ")
+            || t.starts_with("pub struct ")
             || t.starts_with("impl ")
+            || t.starts_with("mod ")
+            || t.starts_with("pub mod ")
             || t.starts_with("class ")
         {
             count += 1;
@@ -190,7 +223,6 @@ fn check_cc_vol(code: &str, n_min: usize) -> bool {
 }
 
 fn check_cc_lang(path: &str) -> bool {
-    // Very small extension checker: path ends-with .rs, .js, .cpp, .h, .aln, .md. [file:2]
     let lower = path.to_ascii_lowercase();
     lower.ends_with(".rs")
         || lower.ends_with(".js")
@@ -212,10 +244,7 @@ fn check_cc_full(code: &str) -> bool {
 
 fn check_cc_deep(path: &str) -> bool {
     let norm = normalize_path(path);
-    let parts: Vec<&str> = norm
-        .split('/')
-        .filter(|p| !p.is_empty())
-        .collect();
+    let parts: Vec<&str> = norm.split('/').filter(|p| !p.is_empty()).collect();
     parts.len() >= 3
 }
 
@@ -251,7 +280,7 @@ fn check_cc_path(path: &str) -> bool {
     true
 }
 
-/* ---------- Tier 2 Checks: Lightweight Token Walker / Parser ---------- */ [file:2]
+/* ---------- Tier 2: Lightweight token walker / parser ---------- */ [file:2]
 
 fn check_cc_crate(previous: &HashSet<String>, current: &HashSet<String>) -> bool {
     for sym in current {
@@ -306,9 +335,7 @@ fn check_cc_sov(code: &str) -> bool {
 }
 
 fn check_cc_nav(code: &str) -> bool {
-    // Must contain a custom walk_dir that uses read_dir and some recursion pattern. [file:2]
-    let has_walk_dir = code.contains("fn walk_dir")
-        || code.contains("pub fn walk_dir");
+    let has_walk_dir = code.contains("fn walk_dir") || code.contains("pub fn walk_dir");
     let mentions_read_dir = code.contains("read_dir(") || code.contains("std::fs::read_dir");
     let banned = ["walkdir::", "globwalk::"];
 
@@ -325,10 +352,9 @@ fn check_cc_nav(code: &str) -> bool {
     true
 }
 
-/* ---------- Helper Utilities (No external crates) ---------- */ [file:2]
+/* ---------- Helpers (no external crates) ---------- */ [file:2]
 
 fn normalize_path(path: &str) -> String {
-    // Collapse multiple slashes, remove leading "./". [file:2]
     let mut out = String::new();
     let mut last_was_slash = false;
     for ch in path.chars() {
@@ -349,7 +375,6 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn extract_identifier_after_keyword(line: &str) -> String {
-    // Example: "pub fn foo(bar: i32)" -> "foo". [file:2]
     let tokens: Vec<&str> = line
         .split(|c: char| c.is_whitespace() || c == '(' || c == '{')
         .filter(|t| !t.is_empty())
