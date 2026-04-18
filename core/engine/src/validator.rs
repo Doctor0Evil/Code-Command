@@ -1,17 +1,18 @@
 // FILE: ./core/engine/src/validator.rs
 
-use std::collections::HashSet; // Standard library only, satisfies CC-SOV. [file:2]
+use std::collections::HashSet; // Standard library only, satisfies CC-SOV.
+use std::path::Path;
 
-/// A single validation request for a code artifact plus tag set. [file:2]
+/// A single validation request for a code artifact plus tag set.
 pub struct ValidationRequest {
     pub code: String,
     pub tags: Vec<String>,
-    /// Optional previous symbol snapshot for CC-CRATE. [file:2]
+    /// Optional previous symbol snapshot for CC-CRATE.
     pub previous_symbols: Vec<String>,
 }
 
 impl ValidationRequest {
-    /// Minimal JSON parser for ["TAG","TAG2"] to avoid external deps. [file:2]
+    /// Minimal JSON parser for ["TAG","TAG2"] to avoid external deps.
     pub fn from_json(code: &str, tags_json: &str) -> Self {
         let trimmed = tags_json.trim();
         let inner = trimmed
@@ -36,7 +37,8 @@ impl ValidationRequest {
     }
 }
 
-/// Result of applying all requested CC- checks to a single artifact. [file:2]
+/// Result of applying all requested CC- checks to a single artifact.
+#[derive(Clone, Debug)]
 pub struct ValidationResult {
     pub ok: bool,
     pub failures: Vec<String>,
@@ -73,11 +75,11 @@ impl ValidationResult {
     }
 }
 
-/// Main entry for the CC-Engine: run all requested invariant checks. [file:2]
+/// Main entry for the CC-Engine: run all requested invariant checks.
 pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     let mut result = ValidationResult::new();
 
-    // Precompute header path if needed by several tags. [file:2]
+    // Precompute header path if needed by several tags.
     let need_path = req
         .tags
         .iter()
@@ -100,10 +102,10 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
             }
             "CC-LANG" => {
                 if let Some(path) = &header_path {
-                    if !check_cc_lang(path) {
+                    if !check_cc_lang_path(path) {
                         result.fail(
                             "CC-LANG",
-                            "File extension is not part of the sovereign stack.",
+                            "File extension is not part of the sovereign stack (.rs,.js,.cpp,.h,.aln,.md).",
                         );
                     }
                 }
@@ -121,6 +123,10 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
             "CC-FILE" => {
                 if header_path.is_none() {
                     result.fail("CC-FILE", "Missing FILE header in first lines of file.");
+                } else if let Some(path) = &header_path {
+                    if path.trim().is_empty() {
+                        result.fail("CC-FILE", "FILE header path is empty.");
+                    }
                 }
             }
             "CC-FULL" => {
@@ -176,7 +182,7 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
                 }
             }
             _ => {
-                // Unknown tag: ignore for forward-compatibility. [file:2]
+                // Unknown tag: ignore for forward-compatibility.
             }
         }
     }
@@ -184,9 +190,9 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     result
 }
 
-/* ---------- Tier 1: Simple string / byte scans ---------- */ [file:2]
+/* ---------- Tier 1: Simple string / byte scans ---------- */
 
-/// Extracts the FILE header path from the first 10 lines if present. [file:2]
+/// Extracts the FILE header path from the first 10 lines if present.
 fn extract_file_header_path(code: &str) -> Option<String> {
     for (i, line) in code.lines().enumerate() {
         if i >= 10 {
@@ -222,14 +228,14 @@ fn check_cc_vol(code: &str, n_min: usize) -> bool {
     count >= n_min
 }
 
-fn check_cc_lang(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.ends_with(".rs")
-        || lower.ends_with(".js")
-        || lower.ends_with(".cpp")
-        || lower.ends_with(".h")
-        || lower.ends_with(".aln")
-        || lower.ends_with(".md")
+/// CC-LANG via extension: .rs, .js, .cpp, .h, .aln, .md only.
+fn check_cc_lang_path(path: &str) -> bool {
+    let p = Path::new(path);
+    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "rs" | "js" | "cpp" | "h" | "aln" | "md"
+    )
 }
 
 fn check_cc_full(code: &str) -> bool {
@@ -280,7 +286,7 @@ fn check_cc_path(path: &str) -> bool {
     true
 }
 
-/* ---------- Tier 2: Lightweight token walker / parser ---------- */ [file:2]
+/* ---------- Tier 2: Lightweight token walker / parser ---------- */
 
 fn check_cc_crate(previous: &HashSet<String>, current: &HashSet<String>) -> bool {
     for sym in current {
@@ -291,7 +297,7 @@ fn check_cc_crate(previous: &HashSet<String>, current: &HashSet<String>) -> bool
     false
 }
 
-/// Collects a minimal symbol set from code by scanning for fn/struct/impl/mod/class. [file:2]
+/// Collects a minimal symbol set from code by scanning for fn/struct/impl/mod/class.
 fn collect_symbols(code: &str) -> HashSet<String> {
     let mut set = HashSet::new();
     for line in code.lines() {
@@ -352,7 +358,7 @@ fn check_cc_nav(code: &str) -> bool {
     true
 }
 
-/* ---------- Helpers (no external crates) ---------- */ [file:2]
+/* ---------- Helpers (no external crates) ---------- */
 
 fn normalize_path(path: &str) -> String {
     let mut out = String::new();
