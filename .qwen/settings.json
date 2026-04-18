@@ -1,0 +1,18 @@
+{
+  "model": {
+    "name": "qwen-coder-plus" 
+  },
+  "general": {
+    "projectRoot": ".",
+    "enableAutoUpdate": false
+  },
+  "context": {
+    "fileFiltering": {
+      "respectGitignore": true
+    }
+  },
+  "sandbox": {
+    "profile": "browser",
+    "enableWeakerNestedSandbox": true
+  }
+}
