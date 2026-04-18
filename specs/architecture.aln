@@ -1,0 +1,93 @@
+<!-- FILE: ./specs/architecture.aln -->
+***
+cc-invariants: [CC-FILE, CC-LANG, CC-DEEP, CC-PATH]
+kind: architecture-spec
+version: 0.1.0
+status: draft
+sections:
+  - overview
+  - pillars
+  - data-flow
+  - invariant-enforcement
+stack:
+  runtime: [wasm32-unknown-unknown, browser]
+  languages: [rs, js, cpp, aln, md]
+***
+
+# Code-Command Architecture Specification [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+This document describes the high-level **architecture** of Code-Command as a sovereign, zero-setup, browser-native coding agent that runs directly from a GitHub repository.  It serves as a reference for future development and for AI systems that need to understand how to interact with the project while respecting all CC- invariants. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 1. Overview [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Code-Command is a browser-based agent that treats a GitHub repository as its sovereign filesystem and executes all core logic inside a Rust/C++ WebAssembly engine.  A static `index.html` file loads a JavaScript bundle, a `.wasm` binary, and then mounts a repository via GitHub's REST API, presenting it through an editor, file tree, and terminal-like output panel.  All orchestration passes through a small CC-API exposed from the WASM module, which ensures that both user actions and AI-driven automations remain within the project’s invariant boundaries. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+In this model, there is no server-side component, no terminal, and no installation step; the browser is the only runtime, and the GitHub repo is the only storage backend.  The architecture is therefore constrained but predictable, which is what enables strict invariants like `CC-ZERO`, `CC-SOV`, and `CC-PATH` to be enforced consistently. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 2. Pillars [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+### 2.1 WebAssembly Runtime (WASM) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The core logic of Code-Command lives in a Rust crate (`core/engine`) compiled to `wasm32-unknown-unknown` and exposed to JavaScript via `wasm-bindgen` glue code.  This WASM module implements the CC-API functions such as `cc_validate`, `cc_read_file`, `cc_write_file`, `cc_list_dir`, and `cc_execute_task`, which are the only entry points the UI can call. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+By centralizing orchestration in the WASM engine, the architecture guarantees that invariant enforcement, VFS behavior, and task execution all share a single, auditable implementation.  The WASM runtime never performs direct network operations; instead, it delegates to JavaScript shims for GitHub API calls, keeping the engine itself strictly within the allowed language and dependency stack. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+### 2.2 Virtual File System (VFS) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The Virtual File System is an in-memory mirror of the GitHub repository, represented by a `Vfs` struct with `read`, `write`, and `list` operations and a map of normalized paths to `FileEntry` records.  On initialization, JavaScript fetches the repository tree using the Git Trees API (`?recursive=1`) and converts it into a VFS snapshot that seeds the WASM-side `Vfs`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+All file operations inside the engine go through this VFS abstraction, which enforces path normalization, depth requirements, and invariant hooks such as `CC-PATH` and `CC-DEEP`.  When the engine needs new content or wants to persist changes, it calls back into JS via `wasm_bindgen` imports that implement the GitHub Contents API read/write semantics and update an IndexedDB cache. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+### 2.3 UI Shell (Editor, Tree, Terminal) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The UI is a zero-setup shell built in plain HTML5 and JavaScript, with Monaco Editor providing the editing experience as the only external UI library.  `index.html` defines containers for the editor, file tree, and terminal-like output; `js/app/main.js` initializes these components, connects them to the WASM engine, and wires user actions such as “Load repo” and “Run task.” [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The file tree component turns the Git Trees API output into a nested visual structure, with depth-based styling that reflects `CC-DEEP`, while the output panel displays logs and validation reports from the engine.  The editor component is responsible for mapping file paths to language modes and for acting as the source of code content when building Single-Iteration Task Queues. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+### 2.4 GitHub API Backend [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+GitHub’s REST API is treated as the only external service and serves as the backing store for all persistent project state.  The architecture uses the Trees API for efficient traversal of repository structure, the Contents API for Base64-encoded file contents, and PUT operations to create or update files with explicit commit messages and SHAs. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Client-side caching via IndexedDB reduces repeated API calls and helps stay within rate limits, while still allowing the engine to fetch fresh content when SHAs change.  This design keeps the storage surface narrow, transparent, and audit-ready, aligning with the project’s emphasis on sovereignty and traceability. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 3. Data Flow [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The typical data flow for “open a repo and run a task” proceeds through these stages:
+
+1. The user specifies `owner/repo` in the header input of `index.html`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+2. `main.js` calls `fetchRepoTree` in `js/app/github/api.js`, which uses the Git Trees API and stores the result in the local cache. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+3. The resulting tree is transformed into a VFS snapshot and passed into the engine via `cc_init_vfs`, seeding the WASM-side `Vfs`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+4. The file tree UI uses the same tree data to render a nested view; when the user selects a file, `cc_read_file` is called to retrieve its content, which may cause a JS/GitHub fetch if the VFS has no cached content yet. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+5. The user or AI agent edits the file in Monaco and triggers “Run task,” causing `main.js` to assemble a SITQ payload that updates the file and requests validation. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+6. `cc_execute_task` runs inside WASM, writing to the VFS (and via JS to GitHub) and passing file contents to the validator to check CC- tags before returning a report to the UI. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+7. The output panel renders the report in a terminal-like style, showing operations performed and any invariant failures, which can then guide further edits or actions. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+This end-to-end flow keeps the boundary between browser, WASM, and GitHub explicit and small, which is critical for understanding and maintaining the system over time. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 4. Invariant Enforcement [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Invariant enforcement is centralized in the Rust validator module, but the architecture supports it at multiple layers.  At the entrypoint, `index.html` and `main.js` are written to satisfy `CC-ZERO` by avoiding any setup commands or environment dependencies, and by loading only static assets and browser-native APIs. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Inside the engine, the validator applies Tier 1 checks (string/byte scans for headers, extensions, paths, and placeholders) and Tier 2 checks (lightweight token walking for `fn`, `struct`, `use`, and navigation functions) to enforce all 10 CC- tags.  The VFS uses its own path normalization and depth logic to enforce `CC-PATH` and `CC-DEEP` on every write, while the navigation module provides a custom `walk_dir` implementation that satisfies `CC-NAV` without external traversal libraries. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+On the CI side, a GitHub Action workflow builds the WASM engine and runs the same validator against changed files on every pull request, blocking merges if any tag fails.  This ensures that the invariants remain active and enforced across local development, browser usage, AI-driven generation, and repository evolution. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 5. Diagram (Textual) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Conceptually, the system can be thought of as three concentric layers:
+
+- **Outer Layer – Browser Shell:** `index.html`, Monaco, file tree, output panel, and GitHub REST API. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- **Middle Layer – CC-API Bridge:** JS glue and WASM bindings that translate UI actions into engine calls (`cc_validate`, `cc_read_file`, `cc_write_file`, `cc_execute_task`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- **Inner Layer – Sovereign Engine:** Rust/C++ WASM core with VFS, validator, navigator, and task queue implementing all invariants. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Data always flows from the outer layer inward through the CC-API and back outward through structured responses, never bypassing the engine for core logic, which is what keeps the architecture both sovereign and self-validating. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
