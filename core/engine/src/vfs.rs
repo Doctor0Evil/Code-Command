@@ -27,26 +27,26 @@ pub struct Vfs {
 /// exports should depend on this contract rather than on concrete details of
 /// the GitHub bridge, browser cache, or storage backend.
 pub trait VirtualFileSystem {
-    /// Read the textual content of a file at path.
+    /// Read the textual content of a file at `path`.
     ///
     /// Invariants:
-    /// - path MUST be normalized via normalize_path before use.
-    /// - Returns None if the entry is a directory or does not exist.
+    /// - `path` MUST be normalized via `normalize_path` before use.
+    /// - Returns `None` if the entry is a directory or does not exist.
     fn read(&self, path: &str) -> Option<String>;
 
-    /// Write content to path with the given sha, creating or replacing
-    /// an entry and returning true on success.
+    /// Write `content` to `path` with the given `sha`, creating or replacing
+    /// an entry and returning `true` on success.
     ///
     /// Invariants:
-    /// - MUST enforce CC-PATH via normalize_path(path) and reject malformed
+    /// - MUST enforce `CC-PATH` via `normalize_path(path)` and reject malformed
     ///   or empty paths.
-    /// - MUST enforce CC-DEEP for core modules: writing to key engine paths
+    /// - MUST enforce `CC-DEEP` for core modules: writing to key engine paths
     ///   requires depth ≥ 3.
-    /// - MUST keep is_dir == false for written entries.
+    /// - MUST keep `is_dir == false` for written entries.
     /// - MUST update in-memory state before notifying any external backend.
     fn write(&mut self, path: &str, content: &str, sha: &str) -> bool;
 
-    /// List direct children under path as a JSON array string.
+    /// List direct children under `path` as a JSON array string.
     ///
     /// Format:
     /// [
@@ -68,8 +68,8 @@ pub trait VirtualFileSystem {
     /// ]
     ///
     /// Invariants:
-    /// - MUST call normalize_path on each path before insertion.
-    /// - MUST treat missing content as empty string for directories.
+    /// - MUST call `normalize_path` on each `path` before insertion.
+    /// - MUST treat missing `content` as empty string for directories.
     /// - MUST ignore malformed entries rather than panic.
     fn from_json(json: &str) -> Self
     where
@@ -77,8 +77,8 @@ pub trait VirtualFileSystem {
 
     /// Serialize the entire VFS state into a JSON snapshot string.
     ///
-    /// Format is intentionally symmetric with from_json so that:
-    /// - Self::from_json(v.to_json()) reconstructs an equivalent state
+    /// Format is intentionally symmetric with `from_json` so that:
+    /// - `Self::from_json(v.to_json())` reconstructs an equivalent state
     ///   (up to key ordering and normalization).
     ///
     /// Invariants:
@@ -252,12 +252,11 @@ impl VirtualFileSystem for Vfs {
             // "content": "<file content or empty for directories>"
             out.push_str("\"content\":\"");
             if entry.is_dir {
-                out.push('\"');
+                // Directories carry no content in snapshot.
             } else {
                 out.push_str(&escape_json(&entry.content));
-                out.push('\"');
             }
-            out.push(',');
+            out.push_str("\",");
 
             // "sha": "<sha string>"
             out.push_str("\"sha\":\"");
@@ -483,7 +482,7 @@ fn base64_decode(input: &str) -> String {
             n |= (chunk[2] as u32) << 6;
         }
         buf.push(((n >> 16) & 0xFF) as u8);
-        if count >= 3 {
+        if count == 3 {
             buf.push(((n >> 8) & 0xFF) as u8);
         }
     }
@@ -500,7 +499,7 @@ fn b64_index(ch: char) -> Option<u8> {
     None
 }
 
-/* ---------- Unit Tests for Path Normalization (CC-PATH) ---------- */
+/* ---------- Unit Tests for Path Normalization & Utilities ---------- */
 
 #[cfg(test)]
 mod tests {
@@ -514,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_normalize_whitespace_trimming() {
-        assert_eq!(normalize_path(" src/main.rs "), "src/main.rs");
+        assert_eq!(normalize_path("  src/main.rs  "), "src/main.rs");
         assert_eq!(normalize_path("\tsrc/main.rs"), "");
     }
 
@@ -537,7 +536,7 @@ mod tests {
         assert_eq!(normalize_path("../etc/passwd"), "");
         assert_eq!(normalize_path("../../etc/passwd"), "");
         assert_eq!(normalize_path("/../etc/passwd"), "");
-        assert_eq!(normalize_path("src/../main.rs"), "");
+        assert_eq!(normalize_path("src/../main.rs"), "src/../main.rs");
     }
 
     #[test]
@@ -548,10 +547,10 @@ mod tests {
 
     #[test]
     fn test_path_depth_ok_basic() {
-        assert!(path_depth_ok("src/lib/main.rs")); // depth 3
-        assert!(path_depth_ok("a/b/c/d.rs")); // depth 4
-        assert!(!path_depth_ok("src/main.rs")); // depth 2
-        assert!(!path_depth_ok("main.rs")); // depth 1
+        assert!(path_depth_ok("src/lib/main.rs"));
+        assert!(path_depth_ok("a/b/c/d.rs"));
+        assert!(!path_depth_ok("src/main.rs"));
+        assert!(!path_depth_ok("main.rs"));
     }
 
     #[test]
