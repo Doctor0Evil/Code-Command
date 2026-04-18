@@ -1,0 +1,256 @@
+<!-- FILE: ./specs/api.aln -->
+***
+cc-invariants: [CC-FILE, CC-LANG]
+kind: api-spec
+version: 0.1.0
+status: active
+module: cc-engine
+target: wasm32-unknown-unknown
+***
+
+# CC‑API – WebAssembly Export Specification [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+This document defines the public **CC‑API** surface exported from the `cc-engine` WebAssembly module and consumed by the browser runtime.  All JavaScript integrations must treat this API as the sole interface to the engine, and the Rust implementation in `core/engine/src/lib.rs` must conform to these signatures and semantics. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 1. Function: `cc_init_vfs` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_init_vfs(serialized_vfs_json: &str) -> ()`  
+
+**Signature (JS):**  
+`cc_init_vfs(serialized_vfs_json: string): void`  
+
+**Description:**  
+Initializes the in-memory Virtual File System (Vfs) with a snapshot of repository entries provided by JavaScript.  This snapshot is typically derived from the Git Trees API and converted into an array of objects `{ path, content, sha, is_dir }` serialized to JSON. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `serialized_vfs_json` – JSON string encoding an array of file/directory entries used to seed the VFS state. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Behavior:**
+
+- Parses the JSON string and builds a `Vfs` instance, normalizing paths and inserting `FileEntry` records. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- Replaces any existing VFS state in the engine. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Errors / Notes:**
+
+- Malformed JSON results in an empty VFS, but does not crash the module; callers should validate input on the JS side. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 2. Function: `cc_validate` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_validate(code: &str, tags_json: &str) -> JsValue`  
+
+**Signature (JS):**  
+`cc_validate(code: string, tags_json: string): string`  
+
+**Description:**  
+Validates a single code artifact against a set of CC‑ tags, returning a JSON-encoded `ValidationResult`.  This function is used both in-browser and in CI contexts to check invariants before accepting generated code. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `code` – Full text content of the file or artifact to validate. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- `tags_json` – JSON array of tag IDs, e.g. `["CC-FILE","CC-LANG","CC-FULL"]`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Return (JSON string):**
+
+```aln
+{
+  "ok": true | false,
+  "failures": [
+    "TAG: human-readable failure message",
+    ...
+  ]
+}
+```  
+
+**Behavior:**
+
+- Constructs a `ValidationRequest` from `code` and the parsed tag list. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- Runs Tier 1 and Tier 2 checks for each requested tag. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- Aggregates failures, sets `"ok": false` if any tag fails. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Errors / Notes:**
+
+- Unrecognized tags are ignored (forward compatible behavior). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 3. Function: `cc_read_file` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_read_file(path: &str) -> String`  
+
+**Signature (JS):**  
+`cc_read_file(path: string): string`  
+
+**Description:**  
+Reads file content from the VFS, falling back to JS/GitHub fetch when the content is not yet cached. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `path` – Logical repository path, e.g. `"src/main.rs"` or `"core/engine/src/lib.rs"`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Return:**
+
+- Returns the decoded text content of the file, or an empty string if the file is not found or cannot be read. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Behavior:**
+
+- Normalizes the path, looks up a `FileEntry` in the VFS, and returns cached content if available. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- If not present, invokes `wasmFetchFileBase64` in JS to fetch the Base64-encoded content from GitHub, decodes it, and returns the result. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 4. Function: `cc_write_file` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_write_file(path: &str, content: &str, sha: &str) -> bool`  
+
+**Signature (JS):**  
+`cc_write_file(path: string, content: string, sha: string): boolean`  
+
+**Description:**  
+Writes file content into the VFS and requests that JavaScript persist the change via the GitHub Contents API. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `path` – Target repository path for the file. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- `content` – New file content as a UTF‑8 string. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- `sha` – Current Git blob SHA of the file, or empty string for new files; used for concurrency control by GitHub. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Return:**
+
+- `true` if the VFS update succeeded and JS reported a successful write operation, `false` otherwise. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Behavior:**
+
+- Normalizes the path and enforces `CC-PATH` and `CC-DEEP` via internal checks (rejecting malformed or shallow paths). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- Updates the local VFS entry, Base64-encodes the content, and invokes `wasmWriteFileBase64` in JS to perform the GitHub PUT. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 5. Function: `cc_list_dir` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_list_dir(path: &str) -> String`  
+
+**Signature (JS):**  
+`cc_list_dir(path: string): string`  
+
+**Description:**  
+Lists direct children of a directory from the VFS, returning a JSON array suitable for UI components like the file tree. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `path` – Logical directory path to list; empty string may represent repository root. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Return (JSON string):**
+
+```aln
+[
+  { "path": "core/engine", "is_dir": true,  "sha": "..." },
+  { "path": "README.md",   "is_dir": false, "sha": "..." },
+  ...
+]
+```  
+
+**Behavior:**
+
+- Normalizes the input path, scans VFS entries for direct children (no deeper descendants), and emits them as JSON objects. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 6. Function: `cc_execute_task` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Signature (WASM / Rust):**  
+`cc_execute_task(task_json: &str) -> String`  
+
+**Signature (JS):**  
+`cc_execute_task(task_json: string): string`  
+
+**Description:**  
+Executes a Single-Iteration Task Queue (SITQ) described as a JSON payload, performing multiple file operations and validations in one call. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Parameters:**
+
+- `task_json` – JSON object with a top-level `"tasks"` array, each task containing fields such as `kind`, `path`, `content`, `sha`, and `tags`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Example Payload:**
+
+```aln
+{
+  "tasks": [
+    {
+      "kind": "update",
+      "path": "src/main.rs",
+      "content": "fn main() {}",
+      "sha": "",
+      "tags": []
+    },
+    {
+      "kind": "validate",
+      "path": "src/main.rs",
+      "content": "",
+      "sha": "",
+      "tags": ["CC-FILE", "CC-LANG", "CC-FULL"]
+    }
+  ]
+}
+```  
+
+**Return (JSON string):**
+
+```aln
+{
+  "ok": true | false,
+  "operations": [
+    "create: src/main.rs",
+    "validate: src/main.rs => ok"
+  ],
+  "validations": {
+    "src/main.rs": {
+      "ok": true,
+      "failures": []
+    }
+  }
+}
+```  
+
+**Behavior:**
+
+- Parses the task list using a minimal, custom parser in `task_queue.rs`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- For `create`/`update` tasks, calls `Vfs::write`; for `validate` tasks, reads content and invokes `run_validation`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- Aggregates an execution report with operation summaries and per-file validation results. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Errors / Notes:**
+
+- Malformed task JSON yields a report with `"ok": false` and an explanatory `queue-failed` operation message. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 7. WASM–JS Bridge Contracts [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The CC‑API assumes the presence of specific JS functions, imported into the engine via `wasm_bindgen` in `vfs.rs`.  These are not exposed as CC‑API functions to the UI but are part of the internal contract between WASM and the browser runtime. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+**Imported Functions (from `js/app/github/api.js`):**
+
+- `wasmFetchFileBase64(path: string) -> Promise<string>`  
+  - Returns Base64-encoded file contents for the given path, using the GitHub Contents API. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+- `wasmWriteFileBase64(path: string, content_base64: string, sha: string) -> Promise<boolean>`  
+  - Writes a Base64-encoded file to GitHub via the Contents API and returns a success flag. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Implementations of these functions must respect `CC-SOV` by only calling GitHub’s REST API and must cooperate with the VFS logic to maintain path integrity and depth invariants. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 8. Usage Expectations [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+- **UI code** must always go through the CC‑API instead of directly manipulating GitHub or local state when performing core actions (validation, file reads/writes, multi-step tasks). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- **AI integrations** should construct SITQ payloads for complex operations and call `cc_execute_task` rather than issuing many small, uncoordinated calls. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- **Future extensions** should add new exports only when necessary and must document them in this file before updating `lib.rs`, preserving the invariant that the CC‑API is formally specified. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
