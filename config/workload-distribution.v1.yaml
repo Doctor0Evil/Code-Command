@@ -1,0 +1,26 @@
+---
+// FILE: ./config/workload-distribution.v1.yaml
+// CC-LANG: md
+// CC-FILE: config/workload-distribution.v1.yaml
+// CC-DEEP: ./config/workload-distribution.v1.yaml
+
+version: 1
+regions:
+  - region_id: "us-west-phx"
+    total_skos: 10000000
+    distribution:
+      - class_id: "heritage_archive"
+        fraction: 0.70
+      - class_id: "smart_city_telemetry"
+        fraction: 0.25
+      - class_id: "neural_bci_stream"
+        fraction: 0.05
+  - region_id: "eu-central-ffm"
+    total_skos: 8000000
+    distribution:
+      - class_id: "heritage_archive"
+        fraction: 0.55
+      - class_id: "smart_city_telemetry"
+        fraction: 0.35
+      - class_id: "neural_bci_stream"
+        fraction: 0.10
