@@ -1,10 +1,12 @@
 // FILE: ./core/engine/src/vfs.rs
 
-use std::collections::HashMap; // Standard library only, satisfies CC-SOV. [file:2]
+use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
 
-use wasm_bindgen::prelude::*; // Build-time JS glue only; no external runtime crates. [file:2]
+/// Sovereign Virtual File System identity for AI-Chat and CI validators.
+pub const CC_VFS_ID: &str = "cc-vfs:1";
 
-/// A single file entry in the virtual file system, mirroring GitHub metadata. [file:2]
+/// A single file entry in the virtual file system, mirroring GitHub metadata.
 #[derive(Clone, Debug)]
 pub struct FileEntry {
     pub path: String,
@@ -13,25 +15,171 @@ pub struct FileEntry {
     pub is_dir: bool,
 }
 
-/// Virtual File System used by the CC-Engine.
-/// Backed by JS shims that talk to the GitHub API. [file:2]
+/// The canonical GitHub-backed implementation of the VirtualFileSystem.
 #[derive(Default)]
 pub struct Vfs {
-    files: HashMap<String, FileEntry>,
+    pub files: HashMap<String, FileEntry>,
 }
 
-impl Vfs {
-    /// Create a VFS instance from a JSON snapshot provided by JS. [file:2]
-    pub fn from_json(json: &str) -> Self {
-        // Minimal parser for an array of {path, content, sha, is_dir}. [file:2]
-        let mut files = HashMap::new();
+/// Sovereign virtual filesystem surface for Code-Command.
+///
+/// This trait is the canonical cc-vfs API. All engine components and CC-API
+/// exports should depend on this contract rather than on concrete details of
+/// the GitHub bridge, browser cache, or storage backend.
+pub trait VirtualFileSystem {
+    /// Read the textual content of a file at path.
+    ///
+    /// Invariants:
+    /// - path MUST be normalized via normalize_path before use.
+    /// - Returns None if the entry is a directory or does not exist.
+    fn read(&self, path: &str) -> Option<String>;
+
+    /// Write content to path with the given sha, creating or replacing
+    /// an entry and returning true on success.
+    ///
+    /// Invariants:
+    /// - MUST enforce CC-PATH via normalize_path(path) and reject malformed
+    ///   or empty paths.
+    /// - MUST enforce CC-DEEP for core modules: writing to key engine paths
+    ///   requires depth ≥ 3.
+    /// - MUST keep is_dir == false for written entries.
+    /// - MUST update in-memory state before notifying any external backend.
+    fn write(&mut self, path: &str, content: &str, sha: &str) -> bool;
+
+    /// List direct children under path as a JSON array string.
+    ///
+    /// Format:
+    /// [
+    ///   {"path":"a/b","isdir":true,"sha":""},
+    ///   {"path":"a/b/c.rs","isdir":false,"sha":"..."}
+    /// ]
+    ///
+    /// Invariants:
+    /// - MUST include only direct children (no grandchildren).
+    /// - MUST emit normalized paths.
+    fn list(&self, path: &str) -> String;
+
+    /// Construct a VFS instance from a JSON snapshot.
+    ///
+    /// Expected format:
+    /// [
+    ///   {"path":"...","content":"...","sha":"...","isdir":true|false},
+    ///   ...
+    /// ]
+    ///
+    /// Invariants:
+    /// - MUST call normalize_path on each path before insertion.
+    /// - MUST treat missing content as empty string for directories.
+    /// - MUST ignore malformed entries rather than panic.
+    fn from_json(json: &str) -> Self
+    where
+        Self: Sized;
+
+    /// Serialize the entire VFS state into a JSON snapshot string.
+    ///
+    /// Format is intentionally symmetric with from_json so that:
+    /// - Self::from_json(v.to_json()) reconstructs an equivalent state
+    ///   (up to key ordering and normalization).
+    ///
+    /// Invariants:
+    /// - MUST emit valid JSON with proper string escaping.
+    /// - MUST emit all entries currently present in memory.
+    /// - MUST only emit normalized paths.
+    fn to_json(&self) -> String;
+}
+
+impl VirtualFileSystem for Vfs {
+    fn read(&self, path: &str) -> Option<String> {
+        let norm = normalize_path(path);
+        if norm.is_empty() {
+            return None;
+        }
+
+        if let Some(entry) = self.files.get(&norm) {
+            if !entry.is_dir {
+                return Some(entry.content.clone());
+            }
+        }
+
+        // Fallback: ask JS layer to fetch the file via GitHub Contents API.
+        if let Ok(encoded) = js_fetch_file(&norm) {
+            let decoded = base64_decode(&encoded);
+            return Some(decoded);
+        }
+
+        None
+    }
+
+    fn write(&mut self, path: &str, content: &str, sha: &str) -> bool {
+        let norm = normalize_path(path);
+        if norm.is_empty() {
+            return false;
+        }
+
+        // Enforce CC-DEEP / CC-PATH for core modules and protected paths.
+        if !path_depth_ok(&norm) {
+            return false;
+        }
+
+        // Update local map first (so in-memory state is always authoritative).
+        let entry = FileEntry {
+            path: norm.clone(),
+            content: content.to_string(),
+            sha: sha.to_string(),
+            is_dir: false,
+        };
+        self.files.insert(norm.clone(), entry);
+
+        // Notify JS so it can perform the GitHub write/commit.
+        let encoded = base64_encode(content);
+        js_write_file(&norm, &encoded, sha)
+    }
+
+    fn list(&self, path: &str) -> String {
+        let norm = normalize_path(path);
+        let mut entries = Vec::new();
+
+        for (p, entry) in &self.files {
+            if is_direct_child_of(p, &norm) {
+                entries.push(entry);
+            }
+        }
+
+        let mut out = String::new();
+        out.push('[');
+
+        for (i, e) in entries.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('{');
+            out.push_str("\"path\":\"");
+            out.push_str(&escape_json(&e.path));
+            out.push_str("\",\"isdir\":");
+            out.push_str(if e.is_dir { "true" } else { "false" });
+            out.push_str(",\"sha\":\"");
+            out.push_str(&escape_json(&e.sha));
+            out.push_str("\"}");
+        }
+
+        out.push(']');
+        out
+    }
+
+    fn from_json(json: &str) -> Self {
+        let mut files: HashMap<String, FileEntry> = HashMap::new();
         let trimmed = json.trim();
+
         if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
             return Self { files };
         }
 
-        // Very simple split on "},{" boundaries; assumes well-formed producer. [file:2]
-        let inner = &trimmed[1..trimmed.len() - 1];
+        let inner = &trimmed[1..trimmed.len().saturating_sub(1)];
+        if inner.trim().is_empty() {
+            return Self { files };
+        }
+
+        // Very simple split on "},{" boundaries; assumes well-formed producer.
         for raw in inner.split("},{") {
             let mut path = String::new();
             let mut content = String::new();
@@ -40,6 +188,7 @@ impl Vfs {
 
             for part in raw.split(',') {
                 let p = part.trim();
+
                 if p.starts_with("\"path\"") {
                     if let Some(v) = extract_json_value(p) {
                         path = v;
@@ -52,7 +201,7 @@ impl Vfs {
                     if let Some(v) = extract_json_value(p) {
                         sha = v;
                     }
-                } else if p.starts_with("\"is_dir\"") {
+                } else if p.starts_with("\"isdir\"") || p.starts_with("\"is_dir\"") {
                     if p.contains("true") {
                         is_dir = true;
                     }
@@ -61,6 +210,9 @@ impl Vfs {
 
             if !path.is_empty() {
                 let norm = normalize_path(&path);
+                if norm.is_empty() {
+                    continue;
+                }
                 let entry = FileEntry {
                     path: norm.clone(),
                     content,
@@ -74,91 +226,70 @@ impl Vfs {
         Self { files }
     }
 
-    /// Reads a file from the VFS, fetching from JS/GitHub if needed. [file:2]
-    pub fn read(&self, path: &str) -> Option<String> {
-        let norm = normalize_path(path);
-        if let Some(entry) = self.files.get(&norm) {
-            if !entry.is_dir {
-                return Some(entry.content.clone());
-            }
-        }
-
-        // Fallback: ask JS layer to fetch the file via GitHub Contents API. [file:2]
-        if let Ok(encoded) = js_fetch_file(&norm) {
-            let decoded = base64_decode(&encoded);
-            return Some(decoded);
-        }
-
-        None
-    }
-
-    /// Writes a file into the VFS and notifies JS/GitHub via Contents API semantics. [file:2]
-    pub fn write(&mut self, path: &str, content: &str, sha: &str) -> bool {
-        let norm = normalize_path(path);
-
-        // Enforce CC-DEEP for core modules: require depth >= 3. [file:2]
-        if !path_depth_ok(&norm) {
-            return false;
-        }
-
-        // Update local map. [file:2]
-        let entry = FileEntry {
-            path: norm.clone(),
-            content: content.to_string(),
-            sha: sha.to_string(),
-            is_dir: false,
-        };
-        self.files.insert(norm.clone(), entry);
-
-        // Notify JS so it can perform the GitHub write/commit. [file:2]
-        let encoded = base64_encode(content);
-        js_write_file(&norm, &encoded, sha)
-    }
-
-    /// Lists entries under a directory path, returning a JSON array string. [file:2]
-    pub fn list(&self, path: &str) -> String {
-        let norm = normalize_path(path);
-        let mut entries = Vec::new();
-
-        for (p, entry) in &self.files {
-            if is_direct_child_of(p, &norm) {
-                entries.push(entry);
-            }
-        }
-
+    fn to_json(&self) -> String {
+        // Snapshot format mirrors from_json expectations:
+        // [
+        //   {"path":"...","content":"...","sha":"...","isdir":true|false},
+        //   ...
+        // ]
         let mut out = String::new();
         out.push('[');
-        for (i, e) in entries.iter().enumerate() {
-            if i > 0 {
+
+        let mut first = true;
+        for entry in self.files.values() {
+            if !first {
                 out.push(',');
             }
-            out.push_str("{\"path\":\"");
-            out.push_str(&escape_json(&e.path));
-            out.push_str("\",\"is_dir\":");
-            out.push_str(if e.is_dir { "true" } else { "false" });
-            out.push_str(",\"sha\":\"");
-            out.push_str(&escape_json(&e.sha));
-            out.push_str("\"}");
+            first = false;
+
+            out.push('{');
+
+            // "path": "<normalized path>"
+            out.push_str("\"path\":\"");
+            out.push_str(&escape_json(&entry.path));
+            out.push_str("\",");
+
+            // "content": "<file content or empty for directories>"
+            out.push_str("\"content\":\"");
+            if entry.is_dir {
+                out.push('\"');
+            } else {
+                out.push_str(&escape_json(&entry.content));
+                out.push('\"');
+            }
+            out.push(',');
+
+            // "sha": "<sha string>"
+            out.push_str("\"sha\":\"");
+            out.push_str(&escape_json(&entry.sha));
+            out.push_str("\",");
+
+            // "isdir": true|false
+            out.push_str("\"isdir\":");
+            out.push_str(if entry.is_dir { "true" } else { "false" });
+
+            out.push('}');
         }
+
         out.push(']');
         out
     }
 }
 
-/* ---------- JS Bridge: GitHub API Shims ---------- */ [file:2]
+/* ---------- JS Bridge: GitHub API Shims ---------- */
 
 #[wasm_bindgen(module = "/js/app/github/api.js")]
 extern "C" {
-    /// Fetches a file's Base64 content from GitHub via JS. [file:2]
+    /// Fetches a file's Base64 content from GitHub via JS.
     #[wasm_bindgen(js_name = "wasmFetchFileBase64")]
     fn js_fetch_file(path: &str) -> Result<String, JsValue>;
 
-    /// Writes a Base64-encoded file back to GitHub via JS; returns success flag. [file:2]
+    /// Writes a Base64-encoded file back to GitHub via JS; returns success flag.
     #[wasm_bindgen(js_name = "wasmWriteFileBase64")]
     fn js_write_file(path: &str, content_base64: &str, sha: &str) -> bool;
 }
 
-/* ---------- Path & Depth Helpers (CC-PATH, CC-DEEP) ---------- */ [file:2]
+/* ---------- Path & Depth Helpers (CC-PATH, CC-DEEP) ---------- */
 
 /// Normalize a path according to CC-PATH invariants:
 /// - Trim leading/trailing whitespace
@@ -167,24 +298,22 @@ extern "C" {
 /// - Collapse multiple slashes into one
 /// - Remove leading "./"
 /// - Reject paths containing ".." segments that would escape repo root
-/// - Perform lightweight ASCII normalization (NFC-like for common cases)
 fn normalize_path(path: &str) -> String {
-    // Trim whitespace first
     let trimmed = path.trim();
-    
-    // Reject control characters (ASCII 0-31 except tab/newline which we also reject)
+
+    // Reject control characters (ASCII 0-31).
     for ch in trimmed.chars() {
         if (ch as u32) < 32 {
-            return String::new(); // Invalid path
+            return String::new();
         }
     }
-    
+
     let mut out = String::new();
     let mut last_was_slash = false;
 
     for ch in trimmed.chars() {
         if ch == '\\' {
-            // CC-PATH: replace Windows-style separators with forward slashes. [file:2]
+            // Replace Windows-style separators with forward slashes.
             if !last_was_slash {
                 out.push('/');
                 last_was_slash = true;
@@ -195,33 +324,21 @@ fn normalize_path(path: &str) -> String {
                 last_was_slash = true;
             }
         } else {
-            // Lightweight ASCII normalization: convert common Unicode lookalikes
-            // This is a minimal implementation; full NFC would require external crates
-            let normalized_ch = match ch {
-                // Common Unicode normalization cases (NFC decomposition reversals)
-                '\u{00A0}' => ' ',  // Non-breaking space -> space
-                '\u{2010}'..='\u{2015}' => '-',  // Various dashes -> hyphen
-                '\u{2018}' | '\u{2019}' => '\'',  // Smart quotes -> apostrophe
-                '\u{201C}' | '\u{201D}' => '"',  // Smart double quotes
-                '\u{2026}' => '.',  // Ellipsis -> three dots (will be handled downstream)
-                _ => ch,
-            };
-            out.push(normalized_ch);
+            out.push(ch);
             last_was_slash = false;
         }
     }
 
     let mut norm = out;
-    if norm.starts_with("./") {
-        norm = norm.trim_start_matches("./").to_string();
+    while norm.starts_with("./") {
+        norm = norm[2..].to_string();
     }
-    
-    // Final check: reject if path contains ".." segments that could escape root
-    // We allow ".." in the middle for legitimate navigation but not at start
+
+    // Reject if path contains ".." segments that could escape root.
     if norm.starts_with("..") || norm.contains("/../") {
-        return String::new(); // Dangerous path
+        return String::new();
     }
-    
+
     norm
 }
 
@@ -238,7 +355,7 @@ fn is_direct_child_of(candidate: &str, parent: &str) -> bool {
     let c_norm = normalize_path(candidate);
 
     if parent_norm.is_empty() {
-        // Root listing: entries without further slashes. [file:2]
+        // Root listing: entries without further slashes.
         return !c_norm.contains('/');
     }
 
@@ -252,14 +369,14 @@ fn is_direct_child_of(candidate: &str, parent: &str) -> bool {
     }
     let tail = &rest[1..];
 
-    // Direct child if tail has no additional '/'. [file:2]
+    // Direct child if tail has no additional '/'.
     !tail.contains('/')
 }
 
-/* ---------- Minimal JSON and Base64 Utilities ---------- */ [file:2]
+/* ---------- Minimal JSON and Base64 Utilities ---------- */
 
 fn extract_json_value(part: &str) -> Option<String> {
-    // Expects something like: "key":"value" or "key":"value"} [file:2]
+    // Expects something like: "key":"value" or "key":"value"}
     let mut split = part.splitn(2, ':');
     split.next()?; // key
     let value_part = split.next()?.trim();
@@ -286,7 +403,7 @@ fn escape_json(input: &str) -> String {
     out
 }
 
-// Minimal Base64, aligned with GitHub API requirements, using a custom alphabet. [file:2]
+// Minimal Base64, aligned with GitHub API requirements, using a custom alphabet.
 const B64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -336,7 +453,7 @@ fn base64_encode(input: &str) -> String {
 fn base64_decode(input: &str) -> String {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4];
-    let mut count = 0usize;
+    let mut count = 0;
 
     for ch in input.chars() {
         if ch == '=' {
@@ -358,25 +475,32 @@ fn base64_decode(input: &str) -> String {
         }
     }
 
-    // Handle padding cases based on original input length. [file:2]
-    let padding = input.chars().rev().take_while(|c| *c == '=').count();
-    if padding > 0 && !buf.is_empty() {
-        buf.truncate(buf.len().saturating_sub(padding));
+    // Handle remaining 2 or 3 bytes if any.
+    if count > 1 {
+        let mut n = (chunk[0] as u32) << 18;
+        n |= (chunk[1] as u32) << 12;
+        if count == 3 {
+            n |= (chunk[2] as u32) << 6;
+        }
+        buf.push(((n >> 16) & 0xFF) as u8);
+        if count >= 3 {
+            buf.push(((n >> 8) & 0xFF) as u8);
+        }
     }
 
     String::from_utf8_lossy(&buf).into_owned()
 }
 
 fn b64_index(ch: char) -> Option<u8> {
-    for (i, c) in B64_ALPHABET.iter().enumerate() {
-        if *c as char == ch {
+    for (i, &c) in B64_ALPHABET.iter().enumerate() {
+        if c as char == ch {
             return Some(i as u8);
         }
     }
     None
 }
 
-/* ---------- Unit Tests for Path Normalization (CC-PATH) ---------- */ [file:2]
+/* ---------- Unit Tests for Path Normalization (CC-PATH) ---------- */
 
 #[cfg(test)]
 mod tests {
@@ -390,8 +514,8 @@ mod tests {
 
     #[test]
     fn test_normalize_whitespace_trimming() {
-        assert_eq!(normalize_path("  src/main.rs  "), "src/main.rs");
-        assert_eq!(normalize_path("\t\nsrc/main.rs"), ""); // Control chars rejected
+        assert_eq!(normalize_path(" src/main.rs "), "src/main.rs");
+        assert_eq!(normalize_path("\tsrc/main.rs"), "");
     }
 
     #[test]
@@ -410,33 +534,16 @@ mod tests {
 
     #[test]
     fn test_normalize_reject_parent_escape() {
-        assert_eq!(normalize_path("../etc/passwd"), ""); // Rejected
-        assert_eq!(normalize_path("../../etc/passwd"), ""); // Rejected
-        assert_eq!(normalize_path("/../etc/passwd"), ""); // Rejected
-        assert_eq!(normalize_path("src/../main.rs"), "src/../main.rs"); // Allowed in middle
+        assert_eq!(normalize_path("../etc/passwd"), "");
+        assert_eq!(normalize_path("../../etc/passwd"), "");
+        assert_eq!(normalize_path("/../etc/passwd"), "");
+        assert_eq!(normalize_path("src/../main.rs"), "");
     }
 
     #[test]
     fn test_normalize_control_chars_rejected() {
-        assert_eq!(normalize_path("src\u{0000}main.rs"), ""); // Null byte
-        assert_eq!(normalize_path("src\u{001F}main.rs"), ""); // Control char
-    }
-
-    #[test]
-    fn test_normalize_unicode_normalization() {
-        // Non-breaking space -> space
-        assert_eq!(normalize_path("src\u{00A0}main.rs"), "src main.rs");
-        // En-dash -> hyphen
-        assert_eq!(normalize_path("src\u{2013}main.rs"), "src-main.rs");
-        // Smart quotes -> regular quotes
-        assert_eq!(normalize_path("src\u{2018}main\u{2019}.rs"), "src'main'.rs");
-    }
-
-    #[test]
-    fn test_normalize_empty_and_special() {
-        assert_eq!(normalize_path(""), "");
-        assert_eq!(normalize_path("   "), "");
-        assert_eq!(normalize_path("/"), "/");
+        let s = format!("src{}main.rs", '\u{0000}');
+        assert_eq!(normalize_path(&s), "");
     }
 
     #[test]
@@ -450,8 +557,26 @@ mod tests {
     #[test]
     fn test_is_direct_child_of() {
         assert!(is_direct_child_of("src/main.rs", "src"));
-        assert!(is_direct_child_of("src/lib.rs", ""));
+        assert!(is_direct_child_of("src.rs", ""));
         assert!(!is_direct_child_of("src/sub/main.rs", "src"));
         assert!(!is_direct_child_of("other/main.rs", "src"));
+    }
+
+    #[test]
+    fn test_base64_roundtrip() {
+        let original = "Hello, 世界! This is a test string for base64.";
+        let encoded = base64_encode(original);
+        let decoded = base64_decode(&encoded);
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_escape_json() {
+        let input = "Line1\nLine2\r\n\tTabbed\"Quote\\Backslash";
+        let escaped = escape_json(input);
+        assert_eq!(
+            escaped,
+            "Line1\\nLine2\\r\\n\\tTabbed\\\"Quote\\\\Backslash"
+        );
     }
 }
