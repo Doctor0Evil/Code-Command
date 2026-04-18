@@ -1,0 +1,29 @@
+---
+// FILE: ./config/sko-workload-classes.v1.yaml
+// CC-LANG: md
+// CC-FILE: config/sko-workload-classes.v1.yaml
+// CC-DEEP: ./config/sko-workload-classes.v1.yaml
+
+version: 1
+sko_classes:
+  - class_id: "heritage_archive"
+    sensitivity: 0.2
+    typical_size_mb: 500.0
+    typical_read_ratio: 0.05
+    typical_write_ratio: 0.01
+    target_latency_ms_p95: 5000
+    deferral_window_minutes: 1440
+  - class_id: "smart_city_telemetry"
+    sensitivity: 0.4
+    typical_size_mb: 5.0
+    typical_read_ratio: 0.60
+    typical_write_ratio: 0.80
+    target_latency_ms_p95: 250
+    deferral_window_minutes: 30
+  - class_id: "neural_bci_stream"
+    sensitivity: 0.9
+    typical_size_mb: 50.0
+    typical_read_ratio: 0.80
+    typical_write_ratio: 0.90
+    target_latency_ms_p95: 50
+    deferral_window_minutes: 0
