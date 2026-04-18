@@ -1,0 +1,22 @@
+***
+cc-invariants: [CC-FILE, CC-LANG, CC-FULL, CC-SOV]
+kind: policy-surface
+version: 0.1.0
+status: active
+stack:
+  languages:
+    allow: [rs, js, cpp, h, aln, md]
+    deny: [py, ts, toml, yaml]
+tags:
+  CC-VOL:   active
+  CC-LANG:  active
+  CC-CRATE: active
+  CC-FILE:  active
+  CC-FULL:  active
+  CC-DEEP:  active
+  CC-ZERO:  active
+  CC-PATH:  active
+  CC-SOV:   active
+  CC-NAV:   active
+source-of-truth: Code-Command Sovereign Coding Agent Invariant Policy
+***
