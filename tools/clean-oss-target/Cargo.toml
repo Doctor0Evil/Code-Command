@@ -1,0 +1,9 @@
+[package]
+name = "clean-oss-target"
+version = "0.1.0"
+edition = "2021"
+description = "Prune stale artifacts under /mnt/oss/target for Code-Command builds."
+license = "MIT"
+
+[dependencies]
+# No external crates: standard library only.
