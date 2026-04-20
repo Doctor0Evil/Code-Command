@@ -1,6 +1,52 @@
+!-- FILE .connectors/chatgpt/manifest.aln --
+
 cc-invariants: CC-FILE, CC-LANG, CC-DEEP
 kind: connector-manifest
 platform: chatgpt
 version: 0.1.0
 entry-js: .connectors/chatgpt/adapter.js
 policy: .connectors/chatgpt/policy.aln
+
+---  # YAML-like frontmatter
+name: "Code-Command / ChatGPT Connector"
+version: "0.1.0"
+
+entrypoint:
+  js_function: "ChatConnector.handleRequest"
+  wasm_export: "cc_execute_task"
+
+capabilities:
+  - "codegen"
+  - "validation"
+  - "vfs_read"
+  - "vfs_write"
+  - "tasks"
+
+policy_overrides:
+  required_tags:
+    - "CC-FILE"
+    - "CC-FULL"
+    - "CC-LANG"
+    - "CC-PATH"
+    - "CC-SOV"
+  forbidden_tags:
+    - "CC-ZERO"
+  blacklist_tokens:
+    - "tree-sitter"
+    - "syn"
+    - "reqwest"
+
+connector:
+  id: "code-command-chatgpt"
+  description: >
+    ChatGPT-facing manifest for Code-Command.
+    Declares how prompts are translated into Single-Iteration Task Queue payloads
+    and which invariants must always be enforced.
+  entry_files:
+    - ".index.html"
+    - ".core/engine/src/lib.rs"
+    - ".js/app/main.js"
+  notes: >
+    This connector MUST route all write operations through the Single-Iteration
+    Task Queue (SITQ) via `cc_execute_task`, and MUST NOT bypass the cc-vfs
+    snapshot or CC-VALIDATOR when generating or modifying files.
