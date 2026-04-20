@@ -1,0 +1,526 @@
+-- FILE .specs/engine.aln
+--
+-- Code-Command Embedded Coder Engine Spec (ALN)
+-- Canonical, language-neutral specification for the Code-Command engine.
+-- This file defines engine identity, cc-invariants, VFS snapshot schema,
+-- task language, validator contract, token walker, TaskQueue, and WASM exports.
+
+cc-invariants:
+  - CC-VOL
+  - CC-LANG
+  - CC-FILE
+  - CC-FULL
+  - CC-DEEP
+  - CC-PATH
+  - CC-SOV
+  - CC-CRATE
+  - CC-NAV
+  - CC-ZERO       # Added for completeness; enforced at entrypoints.
+
+engine:
+  id: "cc-engine:1"             # External identifier for this spec.
+  internal_id: "cc-engine1"     # Compact identity used in Rust/C code.
+  task_language_version: "TASK-LANGUAGE-1.0"
+  vfs_snapshot_schema: "VFS-SNAPSHOT-1"
+  validator_contract: "CC-VALIDATOR-1"
+  token_walker_contract: "CC-TOKEN-WALKER-1"
+  taskqueue_contract: "CC-TASKQUEUE-1"
+  languages: ["rust", "cpp"]
+  profiles: ["github", "local", "memory-only"]
+  error_namespace: "CCENG"
+
+status: "draft"
+updated: "2026-04-18"
+
+contracts:
+  cc_zero:
+    id: "CC-ZERO"
+    summary: "Zero-init boot; all engine entry points use only relative imports and assume the environment (VFS, host wiring) is pre-mounted. No install/setup/env logic."
+  cc_vfs:
+    id: "CC-VFS"
+    summary: "All file operations go through a sovereign VirtualFileSystem implementing the cc-vfs snapshot schema; no direct filesystem or network access from engine code."
+  cc_api:
+    id: "CC-API"
+    summary: "Narrow WASM export surface covering only VFS operations, validation, and task execution; no escape hatches."
+  cc_vol:
+    id: "CC-VOL"
+    summary: "Single-Iteration Task Queue supports multi-file, multi-operation batches in one deterministic call."
+
+# -------------------------------------------------------------------
+# 1. Engine identity and scope
+# -------------------------------------------------------------------
+
+SECTION ENGINE-IDENTITY-1
+intent:
+  The engine identity must be stable and versioned.
+  Implementations that claim id "cc-engine:1" or internal_id "cc-engine1"
+  MUST conform to this contract.
+
+fields:
+  id: string           # "cc-engine:1"
+  internal_id: string  # "cc-engine1"
+  version: string      # semver, e.g. "1.0.0"
+  status: string       # "active" | "deprecated"
+  languages: array<string>
+  invariants: array<string>
+
+json-schema:
+  EngineIdentity := {
+    "id": "cc-engine:1",
+    "internal_id": "cc-engine1",
+    "version": "1.0.0",
+    "status": "active",
+    "languages": ["rust", "cpp"],
+    "invariants": ["CC-VOL", "CC-LANG", "CC-FILE", "CC-FULL",
+                   "CC-DEEP", "CC-PATH", "CC-SOV", "CC-CRATE",
+                   "CC-NAV", "CC-ZERO"]
+  }
+
+wasm-export:
+  fn cc_engine_identity() -> string
+    -- Returns EngineIdentity as a JSON string.
+
+requirements:
+  - Rust and C implementations MUST hardcode EngineIdentity values.
+  - Non-conformant engines MUST NOT report these values.
+
+# -------------------------------------------------------------------
+# 2. Error code taxonomy (CCENG-*)
+# -------------------------------------------------------------------
+
+SECTION ERROR-CODES-1
+intent:
+  All observable engine failures must be classified into a stable
+  error code taxonomy with prefix "CCENG-".
+
+codes:
+  CCENG-000: "OK"                    # Not an error; baseline.
+  CCENG-001: "TASK-PARSE"            # Failed to parse TaskQueue payload.
+  CCENG-002: "TASK-UNKNOWN-KIND"     # Task kind not recognized.
+  CCENG-003: "TASK-LIMIT"            # Exceeded task count/size limits.
+  CCENG-010: "VFS-SNAPSHOT-VERSION"  # Unsupported VFS snapshot version.
+  CCENG-011: "VFS-PATH"              # Invalid path (CC-PATH violation).
+  CCENG-020: "VALIDATION-FAILED"     # ValidationResult.ok = false.
+  CCENG-021: "VALIDATION-TAG-UNKNOWN" # Unknown tag (informational).
+  CCENG-030: "PROFILE-UNKNOWN"       # Unknown execution profile.
+  CCENG-031: "PROFILE-CONFLICT"      # Conflicting profiles in queue.
+  CCENG-040: "ENGINE-NOT-READY"      # Engine used before VFS init.
+
+json-schema:
+  ErrorCode := string   # MUST be one of the codes above.
+
+usage:
+  TaskReport.error_code? : ErrorCode
+  ValidationResult.error_code? : ErrorCode
+  cc_last_error_code() : ErrorCode
+
+wasm-export:
+  fn cc_last_error_code() -> string
+
+# -------------------------------------------------------------------
+# 3. cc-vfs snapshot schema (VFS-SNAPSHOT-1)
+# -------------------------------------------------------------------
+
+SECTION VFS-SNAPSHOT-1
+intent:
+  Define a stable, format-bounded schema for VFS snapshots.
+
+types:
+  VfsFileEntry := {
+    "path": string,     # normalized, forward slashes only
+    "content": string,  # may be empty when used as metadata only
+    "sha": string,      # content hash or backend concurrency token
+    "is_dir": boolean   # true for directories
+  }
+
+  VfsSnapshot := {
+    "version": "VFS-SNAPSHOT-1",
+    "files": array<VfsFileEntry>
+  }
+
+json-example:
+  {
+    "version": "VFS-SNAPSHOT-1",
+    "files": [
+      {
+        "path": "src/main.rs",
+        "content": "...",
+        "sha": "abc123",
+        "is_dir": false
+      }
+    ]
+  }
+
+aln-example:
+  vfs-snapshot:
+    schema: "VFS-SNAPSHOT-1"
+    files:
+      - path: "src/main.rs"
+        content: "..."
+        sha: "abc123"
+        is_dir: false
+
+constraints:
+  - Paths MUST be normalized:
+      - No "\\" characters
+      - No "//" sequences
+      - No trailing "/" except for root
+      - No ".." segments that escape the repo root
+  - For core engine modules, depth(path) >= 3 MUST hold, where depth is
+    the number of non-empty segments split by "/".
+  - Symlinks are NOT represented; any repository containing symlinks
+    MUST be rejected at snapshot creation (CC-PATH violation).
+  - Engine MAY maintain extra in-memory metadata (symbol tables, caches)
+    but MUST NOT alter the snapshot schema.
+
+wasm-export:
+  fn cc_init_vfs(snapshot_json: string) -> bool
+    -- Accepts VfsSnapshot JSON.
+    -- Returns false and sets last_error_code to CCENG-010 on version mismatch.
+
+# -------------------------------------------------------------------
+# 4. Task language (TASK-LANGUAGE-1.0)
+# -------------------------------------------------------------------
+
+SECTION TASK-LANGUAGE-1.0
+intent:
+  Define the Single-Iteration Task Queue (SITQ) that is the only write path.
+
+types:
+  TaskKind := "write_file" | "delete_file" | "validate_only" | "noop"
+
+  Task := {
+    "kind": TaskKind,
+    "path": string,
+    "content": string,
+    "sha": string,
+    "tags": array<string>,   # subset of cc-invariants
+    "profile"?: string       # optional per-task override
+  }
+
+  TaskQueuePayload := {
+    "version": "TASK-LANGUAGE-1.0",
+    "profile"?: string,      # "github" | "local" | "memory-only"
+    "tasks": array<Task>
+  }
+
+json-example:
+  {
+    "version": "TASK-LANGUAGE-1.0",
+    "profile": "github",
+    "tasks": [
+      {
+        "kind": "write_file",
+        "path": "src/lib.rs",
+        "content": "...",
+        "sha": "abc123",
+        "tags": ["CC-VOL", "CC-FILE", "CC-LANG"]
+      }
+    ]
+  }
+
+constraints:
+  - TaskQueuePayload.version MUST equal "TASK-LANGUAGE-1.0".
+  - profile MUST be one of engine.profiles; unknown profile yields CCENG-030.
+  - Engines MUST enforce upper bounds on:
+      - number of tasks per queue
+      - content bytes per task
+    Violations yield CCENG-003 and TaskReport.ok=false.
+  - All code-modifying tasks MUST be expressed via SITQ; there is no
+    separate raw write interface.
+
+wasm-export:
+  fn cc_execute_task(task_json: string) -> string
+    -- Accepts TaskQueuePayload JSON.
+    -- Returns TaskReport JSON (see SECTION TASK-REPORT-1).
+
+# -------------------------------------------------------------------
+# 5. Task report schema (TASK-REPORT-1)
+# -------------------------------------------------------------------
+
+SECTION TASK-REPORT-1
+intent:
+  Provide a stable, machine-readable summary of SITQ execution.
+
+types:
+  TaskStatus := {
+    "index": integer,          # 0-based index of task in queue
+    "kind": string,
+    "path": string,
+    "ok": boolean,
+    "error_code"?: ErrorCode,
+    "message"?: string,
+    "validation"?: ValidationResult
+  }
+
+  TaskReport := {
+    "ok": boolean,             # true iff all TaskStatus.ok are true
+    "error_code"?: ErrorCode,  # top-level error, if any
+    "tasks": array<TaskStatus>,
+    "engine": EngineIdentity,
+    "profile": string          # resolved profile used for execution
+  }
+
+semantics:
+  - TaskReport.ok MUST be true iff every TaskStatus.ok is true.
+  - error_code MAY be present at top-level when a systemic error occurs
+    (e.g., TASK-PARSE, PROFILE-UNKNOWN).
+  - Per-task error_code MUST be used for task-local failures.
+
+# -------------------------------------------------------------------
+# 6. Validator contract (CC-VALIDATOR-1)
+# -------------------------------------------------------------------
+
+SECTION VALIDATOR-CONTRACT-1
+intent:
+  Define ValidationRequest/ValidationResult contracts and CC-tag behavior.
+
+types:
+  ValidationRequest := {
+    "code": string,
+    "path": string,
+    "tags": array<string>,
+    "previous_symbols"?: array<string>
+  }
+
+  ValidationFailure := {
+    "tag": string,
+    "message": string,
+    "location"?: {
+      "line": integer,
+      "column": integer
+    }
+  }
+
+  ValidationResult := {
+    "ok": boolean,
+    "error_code"?: ErrorCode,  # e.g. CCENG-020
+    "failures": array<ValidationFailure>,
+    "new_symbols"?: array<string>  # for CC-CRATE
+  }
+
+semantics:
+  - Unknown tag ids in ValidationRequest.tags MUST be ignored
+    (no error, no failure).
+  - ValidationResult.ok MUST be false iff failures.length > 0.
+  - For CC-CRATE, new_symbols MUST equal (current_symbols \ previous_symbols)
+    when previous_symbols is provided.
+  - location is best-effort; if no accurate position exists, line MAY be 0.
+
+wasm-export:
+  fn cc_validate_code(code: string, tags_json: string) -> string
+    -- tags_json is a JSON array of tag ids.
+    -- Returns ValidationResult JSON.
+
+# 6.1 CC-tag semantics (engine level summary)
+
+SECTION VALIDATOR-TAGS-1
+intent:
+  Summarize CC-tag semantics at engine level.
+
+tags:
+  CC-FILE:
+    summary: "Destination Strict"
+    rules:
+      - code MUST contain a header "FILE .path.ext" in the first N lines (N ≤ 10).
+      - Header path, normalized, MUST equal ValidationRequest.path.
+  CC-LANG:
+    summary: "Sovereign Stack"
+    rules:
+      - path extension MUST be one of .rs, .js, .cpp, .h, .aln, .md.
+  CC-FULL:
+    summary: "No Excerpts"
+    rules:
+      - code MUST NOT contain placeholder markers like "...", "rest of code",
+        or "omitted" inside code blocks.
+  CC-DEEP:
+    summary: "Depth-3 Struct"
+    rules:
+      - For core modules (as defined in invariants.aln), depth(path) >= 3.
+  CC-PATH:
+    summary: "Path Integrity"
+    rules:
+      - No "\\" or "//" sequences in normalized paths.
+  CC-SOV:
+    summary: "No Externals"
+    rules:
+      - Imports/includes MUST resolve to paths/modules inside the project
+        tree derived from cc-vfs / CC-FILE headers.
+  CC-VOL:
+    summary: "Volume Lock"
+    rules:
+      - Count of declarations (fn, struct, class, etc.) MUST be >= V_min.
+      - V_min defined in invariants.aln.
+  CC-CRATE:
+    summary: "Fresh Logic"
+    rules:
+      - Given previous_symbols, at least one new declaration MUST appear.
+  CC-NAV:
+    summary: "Discovery Logic"
+    rules:
+      - Codebase MUST contain a custom recursive walker over the repo/VFS.
+  CC-ZERO:
+    summary: "Zero-Setup Boot"
+    rules:
+      - Entry files (index.html, lib.rs, main.js) MUST NOT refer to env
+        variables, temp dirs, or install/setup paths.
+
+# -------------------------------------------------------------------
+# 7. Token walker contract (CC-TOKEN-WALKER-1)
+# -------------------------------------------------------------------
+
+SECTION CC-TOKEN-WALKER-1
+intent:
+  Specify the Custom Token Walker responsible for structural scans.
+
+types:
+  LanguageHint := "Rust" | "JS" | "CPP" | "ALN" | "MD"
+
+  ScanProfile := {
+    "id": string,
+    "tags": array<string>   # CC-tags whose checks depend on this profile
+  }
+
+  CCTokenWalker := {
+    "input": string,
+    "language_hint": LanguageHint,
+    "scan_profile": ScanProfile
+  }
+
+requirements:
+  - Implementation MUST be zero-dependency and zero-regex.
+  - After construction, scanning SHOULD be zero-allocation.
+  - Walker MUST provide:
+      - iteration over declaration-like lines,
+      - iteration over import/include lines,
+      - detection of FILE headers,
+      - extraction of path-like substrings.
+
+performance:
+  - In WASM, scanning a synthetic 10,000-line Rust file under a full engine
+    profile SHOULD complete within ~5 ms on representative hardware.
+
+benchmark-export:
+  fn cc_bench_token_walker(input_json: string) -> string
+    -- input_json: { "code": string, "profile": { "language": string,
+    --                                          "want_volume": bool,
+    --                                          "want_imports": bool,
+    --                                          "want_navigation": bool } }
+    -- returns: { "time_ms": number,
+    --            "throughput_line": number,
+    --            "throughput_byte": number,
+    --            "symbol_count": number }
+
+# -------------------------------------------------------------------
+# 8. TaskQueue contract (CC-TASKQUEUE-1)
+# -------------------------------------------------------------------
+
+SECTION CC-TASKQUEUE-1
+intent:
+  The TaskQueue is the exclusive orchestrator of VFS mutations.
+
+behavior:
+  - Input: TaskQueuePayload JSON.
+  - Engine MUST:
+      - Parse payload using custom logic (no external JSON crates).
+      - Normalize all task.path values.
+      - For write_file and validate_only tasks:
+          - Construct ValidationRequest and call validator.
+          - If validation fails, MUST NOT commit any content changes
+            associated with that task.
+      - For delete_file tasks:
+          - Remove entry if present.
+      - Execute tasks strictly in the given order (single iteration).
+      - Treat any unknown kind as failure (CCENG-002) without panicking
+        and without mutating the VFS.
+
+transactional-semantics:
+  - Engine SHOULD treat each TaskQueuePayload as a transaction:
+      - Snapshot VFS at start.
+      - If any task fails (validation or engine error), restore snapshot.
+      - Report ok=false in TaskReport.
+
+profiles:
+  - "github":
+      - Host uses path/content/sha to commit to GitHub.
+      - Engine itself does not perform network I/O.
+  - "local":
+      - Host persists to local filesystem or encrypted vault.
+  - "memory-only":
+      - No persistence beyond in-memory VFS.
+
+# -------------------------------------------------------------------
+# 9. WASM export contract (CC-API)
+# -------------------------------------------------------------------
+
+SECTION CC-API-1
+intent:
+  Define the WASM export surface for browser/host use.
+
+exports:
+  fn cc_init_vfs(serialized_vfs_json: string) -> bool
+  fn ccreadfile(path: string) -> string
+  fn ccwritefile(path: string, content: string, sha: string) -> bool
+  fn cclistdir(path: string) -> string
+  fn cc_validate_code(code: string, tags_json: string) -> string
+  fn cc_execute_task(task_json: string) -> string
+  fn cc_engine_identity() -> string
+  fn cc_engine_capabilities() -> string
+  fn cc_last_error_code() -> string
+
+semantics:
+  - cc_init_vfs:
+      - Initializes/replaces in-memory VFS.
+      - MUST NOT perform network I/O.
+  - ccreadfile:
+      - Returns content or "" if not found.
+  - ccwritefile:
+      - MUST route through SITQ semantics (possibly via a synthesized
+        single-task payload) and return true only if write succeeded.
+  - cclistdir:
+      - Returns JSON array of child paths for a directory.
+  - cc_validate_code:
+      - Returns ValidationResult JSON per VALIDATOR-CONTRACT-1.
+  - cc_execute_task:
+      - Returns TaskReport JSON per TASK-REPORT-1.
+  - cc_engine_identity:
+      - Returns EngineIdentity JSON.
+  - cc_engine_capabilities:
+      - Returns { engine, features, profiles, tags } JSON summary.
+  - cc_last_error_code:
+      - Returns last non-OK CCENG code, or CCENG-000.
+
+constraints:
+  - WASM module MUST NOT access environment variables, OS processes,
+    or arbitrary host filesystems; all state flows via VFS and CC-API.
+
+# -------------------------------------------------------------------
+# 10. Compliance and conformance
+# -------------------------------------------------------------------
+
+SECTION CONFORMANCE-1
+intent:
+  Define what it means to be conformant with "cc-engine:1".
+
+criteria:
+  - Implementation MUST satisfy sections:
+      - ENGINE-IDENTITY-1
+      - ERROR-CODES-1
+      - VFS-SNAPSHOT-1
+      - TASK-LANGUAGE-1.0
+      - TASK-REPORT-1
+      - VALIDATOR-CONTRACT-1
+      - CC-TOKEN-WALKER-1
+      - CC-TASKQUEUE-1
+      - CC-API-1
+  - MUST enforce all tags in cc-invariants when requested in Task or
+    ValidationRequest.
+  - MUST expose a machine-readable way to declare its identity and version.
+  - MUST pass a shared conformance suite that:
+      - Provides canonical VFS snapshots and TaskQueuePayloads.
+      - Requires bit-for-bit equivalent TaskReport/ValidationResult outputs
+        across Rust and C implementations.
+
+non-conformance:
+  - Engines that do not meet all criteria MUST NOT advertise "cc-engine:1"
+    or "cc-engine1" identities.
