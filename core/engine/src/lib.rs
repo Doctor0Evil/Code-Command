@@ -10,6 +10,7 @@ mod logger;
 mod github_fallback;
 mod tokenwalker;
 mod blacklist;
+mod blacklist_cache;
 mod wiring;
 
 use validator::{ValidationRequest, ValidationResult};
@@ -18,6 +19,7 @@ use taskqueue::TaskQueue;
 use logger::{global_log, LogLevel};
 use tokenwalker::{TokenWalker, build_scan_mask};
 use blacklist::{BlacklistScanProfile, blacklist_matches_to_json};
+use blacklist_cache::{BlacklistCache, BlacklistCacheEntry, BlacklistMatch};
 use wiring::get_engine;
 
 // wasm-bindgen is allowed as build-time glue only per design.
