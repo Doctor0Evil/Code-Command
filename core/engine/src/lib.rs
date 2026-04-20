@@ -8,11 +8,17 @@ mod vfs;
 mod taskqueue;
 mod logger;
 mod github_fallback;
+mod tokenwalker;
+mod blacklist;
+mod wiring;
 
 use validator::{ValidationRequest, ValidationResult};
 use vfs::{Vfs, VirtualFileSystem, CC_VFS_ID};
 use taskqueue::TaskQueue;
 use logger::{global_log, LogLevel};
+use tokenwalker::{TokenWalker, build_scan_mask};
+use blacklist::{BlacklistScanProfile, blacklist_matches_to_json};
+use wiring::get_engine;
 
 // wasm-bindgen is allowed as build-time glue only per design.
 use wasm_bindgen::prelude::*;
@@ -26,6 +32,7 @@ static mut VFS: Option<Vfs> = None;
 // These map directly onto the CC-API surface described in specs/api.aln.
 //
 
+/// Mount an in-memory VFS snapshot (VFS-SNAPSHOT-1 JSON).
 #[wasm_bindgen]
 pub fn ccinitvfs(serialized_vfs_json: &str) {
     let vfs = Vfs::from_json(serialized_vfs_json);
@@ -34,6 +41,8 @@ pub fn ccinitvfs(serialized_vfs_json: &str) {
     }
 }
 
+/// Read a file from the virtual file system.
+/// Returns an empty string on failure.
 #[wasm_bindgen]
 pub fn ccreadfile(path: &str) -> String {
     unsafe {
@@ -44,6 +53,8 @@ pub fn ccreadfile(path: &str) -> String {
     String::new()
 }
 
+/// Write a file into the virtual file system.
+/// Returns true on success, false on failure.
 #[wasm_bindgen]
 pub fn ccwritefile(path: &str, content: &str, sha: &str) -> bool {
     unsafe {
@@ -54,6 +65,7 @@ pub fn ccwritefile(path: &str, content: &str, sha: &str) -> bool {
     false
 }
 
+/// List directory contents as JSON (array of entries).
 #[wasm_bindgen]
 pub fn cclistdir(path: &str) -> String {
     unsafe {
@@ -64,6 +76,8 @@ pub fn cclistdir(path: &str) -> String {
     "[]".to_string()
 }
 
+/// Run a validation pass over a code buffer with the given tag list.
+/// Returns a JSON-encoded ValidationResult.
 #[wasm_bindgen]
 pub fn ccvalidatecode(code: &str, tags_json: &str) -> JsValue {
     let req = ValidationRequest::from_json(code, tags_json);
@@ -71,6 +85,8 @@ pub fn ccvalidatecode(code: &str, tags_json: &str) -> JsValue {
     JsValue::from_str(&result.to_json())
 }
 
+/// Execute a Single-Iteration Task Queue (SITQ) payload over the VFS.
+/// Returns a JSON-encoded TaskReport.
 #[wasm_bindgen]
 pub fn ccexecutetask(task_json: &str) -> String {
     let mut queue = TaskQueue::from_json(task_json);
@@ -92,6 +108,39 @@ pub fn ccexecutetask(task_json: &str) -> String {
 #[wasm_bindgen]
 pub fn ccvfs_id() -> String {
     CC_VFS_ID.to_string()
+}
+
+//
+// Blacklist-only scan export.
+// This uses the same blacklist profile as the validator, but does not
+// perform full validation or emit a ValidationResult.
+//
+
+/// Scan a code buffer against the active blacklist profile only.
+///
+/// `code` is the buffer to scan.
+/// `profile_json` is a small JSON object that encodes language and tags, e.g.:
+/// `{ "language": "rust", "tags": ["CC-FULL", "CC-SOV"] }`
+///
+/// Returns a JSON array of BlacklistMatch objects.
+#[wasm_bindgen]
+pub fn cc_scan_blacklist(code: &str, profile_json: &str) -> String {
+    // 1. Parse profile_json into a small struct.
+    let profile = BlacklistScanProfile::from_json(profile_json);
+
+    // 2. Build ScanProfile bitmask with blacklist scanning enabled.
+    let scan_mask = build_scan_mask(&profile.tags, profile.language, true);
+
+    // 3. Get blacklist profile from WiringManifest / ENGINE.
+    let engine = get_engine().expect("engine not initialized");
+    let blacklist = &engine.validator.blacklist_profile;
+
+    // 4. Run token walker in blacklist-only mode.
+    let walker = TokenWalker::new(code, scan_mask, profile.language);
+    let matches = walker.scan_blacklist_only(blacklist);
+
+    // 5. Serialize Vec<BlacklistMatch> to JSON array and return.
+    blacklist_matches_to_json(&matches)
 }
 
 //
