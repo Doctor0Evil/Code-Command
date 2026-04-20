@@ -5,10 +5,13 @@
 // wiring UI events to the CC-API. Satisfies CC-ZERO by using only
 // relative imports and no environment/setup logic.
 
-import initWasm, * as CCEngine from '../lib/wasm/ccengine.js';
+// WASM glue: initializes cc-engine.wasm and exposes CC-API functions.
+import initWasm, * as CCEngine from '../lib/wasm/cc-engine.js';
+// UI primitives.
 import createEditor from './editor/monaco-loader.js';
 import FileTree from './editor/file-tree.js';
 import OutputPanel from './terminal/output-panel.js';
+// GitHub bridge for trees and contents.
 import * as GithubAPI from './github/api.js';
 
 let editor = null;
@@ -67,12 +70,14 @@ async function bootstrap() {
         await initWasm();
         wasmReady = true;
 
-        // Verify that the canonical cc-vfs implementation is active.
-        const vfsId = CCEngine.ccvfs_id();
-        if (vfsId !== 'cc-vfs:1') {
-            outputPanel.logError(`Unexpected VFS identity: ${vfsId}`);
-        } else {
-            outputPanel.logOk(`VFS active: ${vfsId}`);
+        // Verify that the canonical cc-vfs implementation is active, if exposed.
+        if (typeof CCEngine.ccvfs_id === 'function') {
+            const vfsId = CCEngine.ccvfs_id();
+            if (vfsId !== 'cc-vfs:1') {
+                outputPanel.logError(`Unexpected VFS identity: ${vfsId}`);
+            } else {
+                outputPanel.logOk(`VFS active: ${vfsId}`);
+            }
         }
 
         const editorContainer = document.getElementById('cc-editor');
@@ -105,23 +110,27 @@ function wireControls() {
     const toggleLogsButton = document.getElementById('cc-toggle-logs');
     const repoInput = document.getElementById('cc-repo-input');
 
-    loadButton.addEventListener('click', async () => {
-        const value = (repoInput.value || '').trim();
-        if (!value) {
-            outputPanel.logWarn('Enter owner/repo before loading.');
-            return;
-        }
-        const [owner, repo] = value.split('/');
-        if (!owner || !repo) {
-            outputPanel.logError('Repository must be in the form owner/repo.');
-            return;
-        }
-        await loadRepository(owner, repo);
-    });
+    if (loadButton) {
+        loadButton.addEventListener('click', async () => {
+            const value = (repoInput && repoInput.value) ? repoInput.value.trim() : '';
+            if (!value) {
+                outputPanel.logWarn('Enter owner/repo before loading.');
+                return;
+            }
+            const [owner, repo] = value.split('/');
+            if (!owner || !repo) {
+                outputPanel.logError('Repository must be in the form owner/repo.');
+                return;
+            }
+            await loadRepository(owner, repo);
+        });
+    }
 
-    runTaskButton.addEventListener('click', async () => {
-        await runCurrentTask();
-    });
+    if (runTaskButton) {
+        runTaskButton.addEventListener('click', async () => {
+            await runCurrentTask();
+        });
+    }
 
     if (toggleLogsButton) {
         toggleLogsButton.addEventListener('click', () => {
@@ -146,7 +155,12 @@ async function loadRepository(owner, repo) {
         const vfsSnapshot = GithubAPI.treeToVfsSnapshot(tree);
 
         // Seed the WASM-side VFS.
-        CCEngine.ccinitvfs(JSON.stringify(vfsSnapshot));
+        if (typeof CCEngine.ccinitvfs === 'function') {
+            CCEngine.ccinitvfs(JSON.stringify(vfsSnapshot));
+        } else {
+            outputPanel.logError('ccinitvfs export not found on CCEngine.');
+            return;
+        }
 
         // Update UI tree.
         fileTree.setTree(tree);
@@ -171,6 +185,11 @@ async function handleFileSelect(path) {
 
     try {
         outputPanel.logInfo(`Opening ${path}...`);
+
+        if (typeof CCEngine.ccreadfile !== 'function') {
+            outputPanel.logError('ccreadfile export not found on CCEngine.');
+            return;
+        }
 
         // Ask WASM to read from VFS (which may call back to JS/GitHub).
         const content = CCEngine.ccreadfile(path);
@@ -215,7 +234,7 @@ async function runCurrentTask() {
         return;
     }
 
-    const path = fileTree.getActivePath() || 'src/main.rs';
+    const path = (fileTree && fileTree.getActivePath && fileTree.getActivePath()) || 'src/main.rs';
     const code = editor.getValue();
 
     /** @type {TaskQueuePayload} */
@@ -241,6 +260,11 @@ async function runCurrentTask() {
     outputPanel.logInfo(
         `Running Single-Iteration Task Queue for ${path}...`
     );
+
+    if (typeof CCEngine.ccexecutetask !== 'function') {
+        outputPanel.logError('ccexecutetask export not found on CCEngine.');
+        return;
+    }
 
     try {
         const reportJson = CCEngine.ccexecutetask(JSON.stringify(payload));
@@ -269,16 +293,21 @@ function renderTaskReport(reportJson) {
             }
         }
 
-        if (report.validations) {
+        if (report.validations && typeof report.validations === 'object') {
             Object.keys(report.validations).forEach((path) => {
                 const res = report.validations[path];
+                if (!res) return;
                 if (res.ok) {
                     outputPanel.logOk(`Validation OK: ${path}`);
-                } else {
+                } else if (Array.isArray(res.failures)) {
                     outputPanel.logError(
                         `Validation failed for ${path}: ${res.failures.join(
                             '; '
                         )}`
+                    );
+                } else {
+                    outputPanel.logError(
+                        `Validation failed for ${path}: (unknown error shape)`
                     );
                 }
             });
@@ -306,6 +335,9 @@ function guessLanguageFromPath(path) {
     if (lower.endsWith('.md') || lower.endsWith('.aln')) return 'markdown';
     return 'plaintext';
 }
+
+// Public bootstrap entry for external callers (if needed).
+export { bootstrap };
 
 // Kick everything off on DOM ready. No setup scripts, no env vars, satisfying CC-ZERO.
 document.addEventListener('DOMContentLoaded', () => {
