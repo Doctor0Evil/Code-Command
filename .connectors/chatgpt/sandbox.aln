@@ -1,0 +1,22 @@
+!-- FILE .connectors/chatgpt/sandbox.aln --
+kind connector-sandbox
+version 1.0.0
+platform "chatgpt"
+
+allowed_apis:
+  - "fetch:https://api.github.com"
+  - "ccInitVfs"
+  - "ccValidateCode"
+  - "ccExecuteTask"
+  - "console.log"
+
+banned_globals:
+  - "eval"
+  - "Function"
+  - "import()"
+  - "WebSocket"
+  - "fetch:*"        # any non-whitelisted fetch target
+  - "window"
+  - "document"
+
+max_runtime_ms: 2000
