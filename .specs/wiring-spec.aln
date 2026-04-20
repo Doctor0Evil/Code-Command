@@ -1,0 +1,11 @@
+!-- FILE .specs/wiring-spec.aln --
+kind wiring-spec
+version 1.0
+nodes [ "Lib", "Validator", "Vfs", "Navigator", "TaskQueue" ]
+edges:
+  - from "Lib"       to "Vfs"       via "ccinitvfs,ccreadfile,ccwritefile,cclistdir"
+  - from "Lib"       to "Validator" via "ccvalidatecode"
+  - from "Lib"       to "TaskQueue" via "ccexecutetask"
+  - from "TaskQueue" to "Vfs"       via "read,write"
+  - from "TaskQueue" to "Validator" via "run_validation"
+  - from "Navigator" to "Vfs"       via "walkdir"
