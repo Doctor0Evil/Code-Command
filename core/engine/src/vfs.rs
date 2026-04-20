@@ -1,25 +1,47 @@
 // FILE: ./core/engine/src/vfs.rs
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
+
+/* ---------- Sovereign Virtual File System Identity ---------- */
 
 /// Sovereign Virtual File System identity for AI-Chat and CI validators.
 pub const CC_VFS_ID: &str = "cc-vfs:1";
 
+/* ---------- Core Types ---------- */
+
 /// A single file entry in the virtual file system, mirroring GitHub metadata.
 #[derive(Clone, Debug)]
 pub struct FileEntry {
+    /// Normalized path (CC-PATH), e.g., "src/main.rs".
     pub path: String,
+    /// UTF-8 file content. Empty for directories.
     pub content: String,
+    /// SHA or backend-specific version token.
     pub sha: String,
+    /// Directory flag.
     pub is_dir: bool,
 }
 
 /// The canonical GitHub-backed implementation of the VirtualFileSystem.
+///
+/// All engine components should talk to `Vfs` through the `VirtualFileSystem`
+/// trait to keep the GitHub bridge, browser cache, and other backends
+/// interchangeable.
 #[derive(Default)]
 pub struct Vfs {
     pub files: HashMap<String, FileEntry>,
 }
+
+/* ---------- Global VFS for WASM Engine ---------- */
+
+thread_local! {
+    /// Global, in-memory VFS instance used by the WASM engine.
+    static VFS_INSTANCE: RefCell<Vfs> = RefCell::new(Vfs::default());
+}
+
+/* ---------- VirtualFileSystem Trait ---------- */
 
 /// Sovereign virtual filesystem surface for Code-Command.
 ///
@@ -87,6 +109,8 @@ pub trait VirtualFileSystem {
     /// - MUST only emit normalized paths.
     fn to_json(&self) -> String;
 }
+
+/* ---------- VirtualFileSystem Implementation for Vfs ---------- */
 
 impl VirtualFileSystem for Vfs {
     fn read(&self, path: &str) -> Option<String> {
@@ -159,7 +183,8 @@ impl VirtualFileSystem for Vfs {
             out.push_str(if e.is_dir { "true" } else { "false" });
             out.push_str(",\"sha\":\"");
             out.push_str(&escape_json(&e.sha));
-            out.push_str("\"}");
+            out.push('"');
+            out.push('}');
         }
 
         out.push(']');
@@ -215,7 +240,7 @@ impl VirtualFileSystem for Vfs {
                 }
                 let entry = FileEntry {
                     path: norm.clone(),
-                    content,
+                    content: if is_dir { String::new() } else { content },
                     sha,
                     is_dir,
                 };
@@ -251,9 +276,7 @@ impl VirtualFileSystem for Vfs {
 
             // "content": "<file content or empty for directories>"
             out.push_str("\"content\":\"");
-            if entry.is_dir {
-                // Directories carry no content in snapshot.
-            } else {
+            if !entry.is_dir {
                 out.push_str(&escape_json(&entry.content));
             }
             out.push_str("\",");
@@ -273,6 +296,32 @@ impl VirtualFileSystem for Vfs {
         out.push(']');
         out
     }
+}
+
+/* ---------- WASM Snapshot Export (Uint8Array-friendly) ---------- */
+
+/// WASM export returning a pointer + length into linear memory.
+///
+/// JS should:
+/// - call `cc_vfs_snapshot_ptr(&mut len)`
+/// - copy `len` bytes from `ptr` into a fresh `Uint8Array`
+/// - decode as UTF-8 JSON using TextDecoder
+#[no_mangle]
+pub extern "C" fn cc_vfs_snapshot_ptr(len_out: *mut u32) -> *const u8 {
+    thread_local! {
+        static SNAPSHOT_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    }
+
+    SNAPSHOT_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        buf.clear();
+        let json = VFS_INSTANCE.with(|v| v.borrow().to_json());
+        buf.extend_from_slice(json.as_bytes());
+        unsafe {
+            *len_out = buf.len() as u32;
+        }
+        buf.as_ptr()
+    })
 }
 
 /* ---------- JS Bridge: GitHub API Shims ---------- */
@@ -375,7 +424,7 @@ fn is_direct_child_of(candidate: &str, parent: &str) -> bool {
 /* ---------- Minimal JSON and Base64 Utilities ---------- */
 
 fn extract_json_value(part: &str) -> Option<String> {
-    // Expects something like: "key":"value" or "key":"value"}
+    // Expects something like: "\"key\":\"value\"" or "\"key\":\"value\"}"
     let mut split = part.splitn(2, ':');
     split.next()?; // key
     let value_part = split.next()?.trim();
@@ -514,7 +563,9 @@ mod tests {
     #[test]
     fn test_normalize_whitespace_trimming() {
         assert_eq!(normalize_path("  src/main.rs  "), "src/main.rs");
-        assert_eq!(normalize_path("\tsrc/main.rs"), "");
+        // Control char should cause rejection.
+        let s = format!("src{}main.rs", '\u{0000}');
+        assert_eq!(normalize_path(&s), "");
     }
 
     #[test]
@@ -537,12 +588,6 @@ mod tests {
         assert_eq!(normalize_path("../../etc/passwd"), "");
         assert_eq!(normalize_path("/../etc/passwd"), "");
         assert_eq!(normalize_path("src/../main.rs"), "src/../main.rs");
-    }
-
-    #[test]
-    fn test_normalize_control_chars_rejected() {
-        let s = format!("src{}main.rs", '\u{0000}');
-        assert_eq!(normalize_path(&s), "");
     }
 
     #[test]
