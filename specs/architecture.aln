@@ -82,7 +82,28 @@ On the CI side, a GitHub Action workflow builds the WASM engine and runs the sam
 
 ***
 
-## 5. Diagram (Textual) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## 5. Coding Tasks and Wiring Actions [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+The architecture supports **coding-tasks** (SITQ payloads that perform multi-file operations with validation) and **wiring-actions** (changes to how engine components connect).  These are documented in `docs/research/coding-tasks-and-wiring-actions.md` and define five task families:
+
+1. **Engine & wiring introspection tasks** – Read engine identity, VFS state, and wiring graphs; emit ResearchObjects without mutation.
+2. **Policy & invariant alignment tasks** – Scan for CC-tag violations and propose/apply rewrites via SITQ.
+3. **VFS & path wiring tasks** – Normalize, deepen, or relocate files to obey CC-PATH/CC-DEEP.
+4. **Token-walker / validator research tasks** – Run benchmarks and gather metrics into ResearchObjects.
+5. **Connector & cache wiring tasks** – Validate connectors/*adapter.js and .cc-cache layout vs CC-DEEP/CC-SOV.
+
+Concrete SITQ patterns (Task A–E) include:
+- **Task A**: Normalize paths and inject FILE headers
+- **Task B**: Enforce CC-FULL and CC-VOL on a module cluster
+- **Task C**: Wiring graph audit and repair
+- **Task D**: Blacklist scan and contamination report
+- **Task E**: Connector adapter scaffolding
+
+These tasks integrate with the TaskQueue (`coreengine/src/taskqueue.rs`) and are exposed to the UI and AI-chat flows as deterministic presets. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 6. Diagram (Textual) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
 
 Conceptually, the system can be thought of as three concentric layers:
 

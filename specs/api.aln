@@ -254,3 +254,17 @@ Implementations of these functions must respect `CC-SOV` by only calling GitHub�
 - **UI code** must always go through the CC‑API instead of directly manipulating GitHub or local state when performing core actions (validation, file reads/writes, multi-step tasks). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
 - **AI integrations** should construct SITQ payloads for complex operations and call `cc_execute_task` rather than issuing many small, uncoordinated calls. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
 - **Future extensions** should add new exports only when necessary and must document them in this file before updating `lib.rs`, preserving the invariant that the CC‑API is formally specified. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+***
+
+## 9. Connector Adapter Contract [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+Platform connectors (e.g., GitHub, GitLab, BitBucket) MUST implement the adapter contract defined in `connectors/<platform>/adapter.js`.  Each adapter exports exactly three functions:
+
+- `init(config: object) -> Promise<boolean>` – Initialize the connector with platform-specific credentials or settings.
+- `fetchRepo(owner: string, repo: string) -> Promise<object>` – Fetch repository tree and content, returning a VFS snapshot compatible with `cc_init_vfs`.
+- `sendResult(result: object) -> Promise<boolean>` – Persist execution results, validation reports, or ResearchObjects to the platform.
+
+The GitHub reference implementation lives at `connectors/github/adapter.js` and serves as the canonical example.  All network IO for code-bearing operations MUST flow through these adapters, never directly from the WASM engine or UI components.  This preserves `CC-SOV` and centralizes audit trails. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
+For more details on coding-tasks and wiring-actions, see `docs/research/coding-tasks-and-wiring-actions.md`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
