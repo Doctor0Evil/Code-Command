@@ -1,7 +1,200 @@
 // FILE: ./core/engine/src/validator.rs
 
-use std::collections::HashSet; // Standard library only, satisfies CC-SOV.
+use std::collections::HashSet;
 use std::path::Path;
+
+/* ---------- Severity and entry types ---------- */
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidationEntry {
+    pub tag: String,      // e.g. "CC-FILE"
+    pub passed: bool,     // true if this tag's check succeeded
+    pub message: String,  // human-readable description
+    pub path: String,     // destination from CC-FILE
+    pub line: u32,        // 1-based, 0 if not applicable
+    pub column: u32,      // 1-based, 0 if not applicable
+    pub severity: Severity,
+}
+
+/* ---------- Contamination reporting ---------- */
+
+/// Structured report describing a blacklist contamination event.
+///
+/// This is attached to `ValidationResult` when a (*/)-style blacklist item is
+/// found so that callers can inspect precise pattern, location, and severity.
+#[derive(Clone, Debug)]
+pub struct ContaminationReport {
+    pub pattern: String,             // blacklist token, e.g. "Tree-Sitter"
+    pub exact_match: String,         // exact substring found in code
+    pub surrounding_context: String, // window around match (e.g. line or ±N chars)
+    pub severity: String,            // "block" | "warn" | "report"
+    pub path: String,                // file path from CC-FILE
+    pub line: u32,                   // 1-based line number (best-effort)
+    pub column: u32,                 // 1-based column (best-effort)
+}
+
+/* ---------- Top-level validation result ---------- */
+
+/// Result of applying all requested CC- checks to a single artifact.
+#[derive(Clone, Debug)]
+pub struct ValidationResult {
+    /// Overall flag: true only if all requested tags passed AND no blocking
+    /// blacklist contaminations were observed.
+    pub ok: bool,
+    /// Per-tag entries including successes and failures.
+    pub entries: Vec<ValidationEntry>,
+    /// Flattened, human-readable failure messages (for legacy callers).
+    pub failures: Vec<String>,
+    /// Blacklist contamination events discovered during scanning.
+    pub contaminations: Vec<ContaminationReport>,
+}
+
+impl ValidationResult {
+    pub fn new() -> Self {
+        Self {
+            ok: true,
+            entries: Vec::new(),
+            failures: Vec::new(),
+            contaminations: Vec::new(),
+        }
+    }
+
+    pub fn record(
+        &mut self,
+        tag: &str,
+        passed: bool,
+        message: &str,
+        path: &str,
+        line: u32,
+        column: u32,
+        severity: Severity,
+    ) {
+        if !passed && matches!(severity, Severity::Error) {
+            self.ok = false;
+        }
+
+        if !passed {
+            self.failures
+                .push(format!("{}: {}", tag, message));
+        }
+
+        self.entries.push(ValidationEntry {
+            tag: tag.to_string(),
+            passed,
+            message: message.to_string(),
+            path: path.to_string(),
+            line,
+            column,
+            severity,
+        });
+    }
+
+    pub fn add_contamination(&mut self, report: ContaminationReport) {
+        if report.severity == "block" {
+            self.ok = false;
+        }
+        self.contaminations.push(report);
+    }
+
+    /// Serialize into JSON using manual escaping (no external crates).
+    ///
+    /// Shape:
+    /// {
+    ///   "ok": true/false,
+    ///   "entries": [ ... ],
+    ///   "failures": [ "TAG: message", ... ],
+    ///   "contaminations": [ ... ]
+    /// }
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+
+        // ok
+        out.push_str("\"ok\":");
+        out.push_str(if self.ok { "true" } else { "false" });
+        out.push(',');
+
+        // entries
+        out.push_str("\"entries\":[");
+        for (i, e) in self.entries.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('{');
+            out.push_str("\"tag\":\"");
+            out.push_str(&escape_json(&e.tag));
+            out.push_str("\",\"passed\":");
+            out.push_str(if e.passed { "true" } else { "false" });
+            out.push_str(",\"message\":\"");
+            out.push_str(&escape_json(&e.message));
+            out.push_str("\",\"path\":\"");
+            out.push_str(&escape_json(&e.path));
+            out.push_str("\",\"line\":");
+            out.push_str(&e.line.to_string());
+            out.push_str(",\"column\":");
+            out.push_str(&e.column.to_string());
+            out.push_str(",\"severity\":\"");
+            out.push_str(match e.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Info => "info",
+            });
+            out.push_str("\"}");
+        }
+        out.push(']');
+        out.push(',');
+
+        // failures
+        out.push_str("\"failures\":[");
+        for (i, f) in self.failures.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('"');
+            out.push_str(&escape_json(f));
+            out.push('"');
+        }
+        out.push(']');
+        out.push(',');
+
+        // contaminations
+        out.push_str("\"contaminations\":[");
+        for (i, c) in self.contaminations.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push('{');
+            out.push_str("\"pattern\":\"");
+            out.push_str(&escape_json(&c.pattern));
+            out.push_str("\",\"exact_match\":\"");
+            out.push_str(&escape_json(&c.exact_match));
+            out.push_str("\",\"surrounding_context\":\"");
+            out.push_str(&escape_json(&c.surrounding_context));
+            out.push_str("\",\"severity\":\"");
+            out.push_str(&escape_json(&c.severity));
+            out.push_str("\",\"path\":\"");
+            out.push_str(&escape_json(&c.path));
+            out.push_str("\",\"line\":");
+            out.push_str(&c.line.to_string());
+            out.push_str(",\"column\":");
+            out.push_str(&c.column.to_string());
+            out.push('}');
+        }
+        out.push(']');
+
+        out.push('}');
+        out
+    }
+}
+
+/* ---------- Validation request ---------- */
 
 /// A single validation request for a code artifact plus tag set.
 pub struct ValidationRequest {
@@ -12,7 +205,7 @@ pub struct ValidationRequest {
 }
 
 impl ValidationRequest {
-    /// Minimal JSON parser for ["TAG","TAG2"] to avoid external deps.
+    /// Minimal JSON parser for `["TAG","TAG2"]` to avoid external deps.
     pub fn from_json(code: &str, tags_json: &str) -> Self {
         let trimmed = tags_json.trim();
         let inner = trimmed
@@ -37,107 +230,29 @@ impl ValidationRequest {
     }
 }
 
-/// Structured report describing a blacklist contamination event.
-///
-/// This is attached to ValidationResult when a (*/)-style blacklist item is found
-/// so that callers can inspect precise pattern, location, and severity.
-#[derive(Clone, Debug)]
-pub struct ContaminationReport {
-    pub pattern: String,             // blacklist token, e.g. "Tree-Sitter"
-    pub exact_match: String,         // exact substring found in code
-    pub surrounding_context: String, // window around match (e.g. line or ±N chars)
-    pub severity: String,            // "block" | "warn" | "report"
-    pub path: String,                // file path from CC-FILE
-    pub line: u32,                   // 1-based line number (best-effort)
-    pub column: u32,                 // 1-based column (best-effort)
-}
-
-/// Result of applying all requested CC- checks to a single artifact.
-#[derive(Clone, Debug)]
-pub struct ValidationResult {
-    pub ok: bool,
-    pub failures: Vec<String>,
-    pub contaminations: Vec<ContaminationReport>,
-}
-
-impl ValidationResult {
-    pub fn new() -> Self {
-        Self {
-            ok: true,
-            failures: Vec::new(),
-            contaminations: Vec::new(),
-        }
-    }
-
-    pub fn fail(&mut self, tag: &str, reason: &str) {
-        self.ok = false;
-        self.failures.push(format!("{}: {}", tag, reason));
-    }
-
-    pub fn add_contamination(&mut self, report: ContaminationReport) {
-        // Any contamination with severity "block" forces ok = false.
-        if report.severity == "block" {
-            self.ok = false;
-        }
-        self.contaminations.push(report);
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut out = String::new();
-        out.push_str("{\"ok\":");
-        out.push_str(if self.ok { "true" } else { "false" });
-        out.push_str(",\"failures\":[");
-        for (i, f) in self.failures.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push('"');
-            out.push_str(&escape_json(f));
-            out.push('"');
-        }
-        out.push_str("],\"contaminations\":[");
-        for (i, c) in self.contaminations.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push_str("{\"pattern\":\"");
-            out.push_str(&escape_json(&c.pattern));
-            out.push_str("\",\"exact_match\":\"");
-            out.push_str(&escape_json(&c.exact_match));
-            out.push_str("\",\"surrounding_context\":\"");
-            out.push_str(&escape_json(&c.surrounding_context));
-            out.push_str("\",\"severity\":\"");
-            out.push_str(&escape_json(&c.severity));
-            out.push_str("\",\"path\":\"");
-            out.push_str(&escape_json(&c.path));
-            out.push_str("\",\"line\":");
-            out.push_str(&c.line.to_string());
-            out.push_str(",\"column\":");
-            out.push_str(&c.column.to_string());
-            out.push('}');
-        }
-        out.push_str("]}");
-        out
-    }
-}
+/* ---------- Main validation entrypoint ---------- */
 
 /// Main entry for the CC-Engine: run all requested invariant checks.
+///
 /// This function is pure and deterministic given the same input.
 pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     let mut result = ValidationResult::new();
 
-    // Precompute header path if needed by several tags.
-    let need_path = req.tags.iter().any(|t| {
-        t == "CC-FILE" || t == "CC-DEEP" || t == "CC-PATH" || t == "CC-LANG"
-    });
+    let need_path = req
+        .tags
+        .iter()
+        .any(|t| t == "CC-FILE" || t == "CC-DEEP" || t == "CC-PATH" || t == "CC-LANG");
     let header_path = if need_path {
         extract_file_header_path(&req.code)
     } else {
         None
     };
+    let path_for_entries = header_path
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("<unknown>");
 
-    // Optional blacklist scan: this can be activated either via a dedicated tag
-    // (e.g., "CC-BLACKLIST") or always-on for core policy files.
+    // Optional blacklist scan.
     if req.tags.iter().any(|t| t == "CC-BLACKLIST") {
         run_blacklist_scan(&req, &header_path, &mut result);
     }
@@ -145,96 +260,227 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     for tag in &req.tags {
         match tag.as_str() {
             "CC-VOL" => {
-                if !check_cc_vol(&req.code, 3) {
-                    result.fail(
-                        "CC-VOL",
-                        "Insufficient number of concrete function-like declarations.",
-                    );
-                }
+                let passed = check_cc_vol(&req.code, 3);
+                let msg = if passed {
+                    "Volume lock satisfied."
+                } else {
+                    "Insufficient number of concrete function-like declarations."
+                };
+                result.record(
+                    "CC-VOL",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Error },
+                );
             }
             "CC-LANG" => {
                 if let Some(path) = &header_path {
-                    if !check_cc_lang_path(path) {
-                        result.fail(
-                            "CC-LANG",
-                            "File extension is not part of the sovereign stack (.rs,.js,.cpp,.h,.aln,.md).",
-                        );
-                    }
+                    let passed = check_cc_lang_path(path);
+                    let msg = if passed {
+                        "File extension is part of the sovereign stack."
+                    } else {
+                        "File extension is not part of the sovereign stack (.rs,.js,.cpp,.h,.aln,.md)."
+                    };
+                    result.record(
+                        "CC-LANG",
+                        passed,
+                        msg,
+                        path,
+                        0,
+                        0,
+                        if passed { Severity::Info } else { Severity::Error },
+                    );
+                } else {
+                    result.record(
+                        "CC-LANG",
+                        false,
+                        "No FILE header path available for CC-LANG evaluation.",
+                        path_for_entries,
+                        0,
+                        0,
+                        Severity::Error,
+                    );
                 }
             }
             "CC-CRATE" => {
                 let prev: HashSet<String> = req.previous_symbols.iter().cloned().collect();
                 let current = collect_symbols(&req.code);
-                if !check_cc_crate(&prev, &current) {
-                    result.fail(
-                        "CC-CRATE",
-                        "No new symbols introduced compared to previous snapshot.",
-                    );
-                }
+                let passed = check_cc_crate(&prev, &current);
+                let msg = if passed {
+                    "Fresh symbols introduced compared to previous snapshot."
+                } else {
+                    "No new symbols introduced compared to previous snapshot."
+                };
+                result.record(
+                    "CC-CRATE",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Warning },
+                );
             }
             "CC-FILE" => {
-                if header_path.is_none() {
-                    result.fail("CC-FILE", "Missing FILE header in first lines of file.");
-                } else if let Some(path) = &header_path {
-                    if path.trim().is_empty() {
-                        result.fail("CC-FILE", "FILE header path is empty.");
-                    }
+                if let Some(path) = &header_path {
+                    let passed = !path.trim().is_empty();
+                    let msg = if passed {
+                        "FILE header found with non-empty path."
+                    } else {
+                        "FILE header path is empty."
+                    };
+                    result.record(
+                        "CC-FILE",
+                        passed,
+                        msg,
+                        path,
+                        0,
+                        0,
+                        if passed { Severity::Info } else { Severity::Error },
+                    );
+                } else {
+                    result.record(
+                        "CC-FILE",
+                        false,
+                        "Missing FILE header in first lines of file.",
+                        path_for_entries,
+                        0,
+                        0,
+                        Severity::Error,
+                    );
                 }
             }
             "CC-FULL" => {
-                if !check_cc_full(&req.code) {
-                    result.fail(
-                        "CC-FULL",
-                        "Found excerpt or placeholder markers in code (\"...\", \"rest of code\", \"omitted\").",
-                    );
-                }
+                let passed = check_cc_full(&req.code);
+                let msg = if passed {
+                    "No excerpt or placeholder markers detected."
+                } else {
+                    "Found excerpt or placeholder markers in code (\"...\", \"rest of code\", \"omitted\")."
+                };
+                result.record(
+                    "CC-FULL",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Error },
+                );
             }
             "CC-DEEP" => {
                 if let Some(path) = &header_path {
-                    if !check_cc_deep(path) {
-                        result.fail(
-                            "CC-DEEP",
-                            "Path does not satisfy depth >= 3 after normalization.",
-                        );
-                    }
+                    let passed = check_cc_deep(path);
+                    let msg = if passed {
+                        "Path satisfies depth >= 3 after normalization."
+                    } else {
+                        "Path does not satisfy depth >= 3 after normalization."
+                    };
+                    result.record(
+                        "CC-DEEP",
+                        passed,
+                        msg,
+                        path,
+                        0,
+                        0,
+                        if passed { Severity::Info } else { Severity::Error },
+                    );
+                } else {
+                    result.record(
+                        "CC-DEEP",
+                        false,
+                        "No FILE header path available for CC-DEEP evaluation.",
+                        path_for_entries,
+                        0,
+                        0,
+                        Severity::Error,
+                    );
                 }
             }
             "CC-ZERO" => {
-                if !check_cc_zero(&req.code) {
-                    result.fail(
-                        "CC-ZERO",
-                        "Entry file contains setup/install/environment references.",
-                    );
-                }
+                let passed = check_cc_zero(&req.code);
+                let msg = if passed {
+                    "No setup/install/environment references detected."
+                } else {
+                    "Entry file contains setup/install/environment references."
+                };
+                result.record(
+                    "CC-ZERO",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Error },
+                );
             }
             "CC-PATH" => {
                 if let Some(path) = &header_path {
-                    if !check_cc_path(path) {
-                        result.fail(
-                            "CC-PATH",
-                            "Path contains backslashes, double slashes, or is empty.",
-                        );
-                    }
+                    let passed = check_cc_path(path);
+                    let msg = if passed {
+                        "Path passes CC-PATH integrity checks."
+                    } else {
+                        "Path contains backslashes, double slashes, or is empty."
+                    };
+                    result.record(
+                        "CC-PATH",
+                        passed,
+                        msg,
+                        path,
+                        0,
+                        0,
+                        if passed { Severity::Info } else { Severity::Error },
+                    );
+                } else {
+                    result.record(
+                        "CC-PATH",
+                        false,
+                        "No FILE header path available for CC-PATH evaluation.",
+                        path_for_entries,
+                        0,
+                        0,
+                        Severity::Error,
+                    );
                 }
             }
             "CC-SOV" => {
-                if !check_cc_sov(&req.code) {
-                    result.fail(
-                        "CC-SOV",
-                        "Detected external crates, tools, or services in imports.",
-                    );
-                }
+                let passed = check_cc_sov(&req.code);
+                let msg = if passed {
+                    "No forbidden external crates or tools detected in imports."
+                } else {
+                    "Detected external crates, tools, or services in imports."
+                };
+                result.record(
+                    "CC-SOV",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Error },
+                );
             }
             "CC-NAV" => {
-                if !check_cc_nav(&req.code) {
-                    result.fail(
-                        "CC-NAV",
-                        "Custom navigation function not found or external walker detected.",
-                    );
-                }
+                let passed = check_cc_nav(&req.code);
+                let msg = if passed {
+                    "Custom navigation function present and no external walker detected."
+                } else {
+                    "Custom navigation function not found or external walker detected."
+                };
+                result.record(
+                    "CC-NAV",
+                    passed,
+                    msg,
+                    path_for_entries,
+                    0,
+                    0,
+                    if passed { Severity::Info } else { Severity::Error },
+                );
             }
             "CC-BLACKLIST" => {
-                // Already handled by run_blacklist_scan above.
+                // Handled above in `run_blacklist_scan`.
             }
             _ => {
                 // Unknown tag: ignore for forward-compatibility.
@@ -253,10 +499,7 @@ fn run_blacklist_scan(
     result: &mut ValidationResult,
 ) {
     // Minimal built-in blacklist for (*/)-style patterns.
-    // NOTE: the actual patterns should be loaded from specsinvariants.aln or a
-    // dedicated blacklist spec, this is just the core engine default.
     let patterns: &[(&str, &str)] = &[
-        // (pattern, severity)
         ("Rust Syn", "block"),
         ("Tree-Sitter", "block"),
     ];
@@ -288,6 +531,7 @@ fn run_blacklist_scan(
 /* ---------- Tier 1: Simple string / byte scans ---------- */
 
 /// Extracts the FILE header path from the first 10 lines if present.
+///
 /// Accepts headers like:
 ///   FILE: ./src/core/engine/validator.rs
 ///   // FILE: ./src/core/engine/validator.rs
