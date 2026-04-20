@@ -3,27 +3,38 @@
 #![allow(clippy::unused_unit)]
 
 // Core modules (all relative, satisfying CC-ZERO).
-mod validator;
+mod validator_plugin;
 mod vfs;
-mod taskqueue;
+mod task_queue;
 mod logger;
 mod github_fallback;
-mod tokenwalker;
 mod blacklist;
 mod blacklist_cache;
-mod wiring;
+mod blacklist_pattern;
+mod wiring_graph;
+mod wiring_validator;
 mod log;
 mod path;
 mod cache_key;
+mod blacklist_diff;
+mod blacklist_summary;
+mod event_router;
+mod navigator;
+mod capacity_engine;
+mod capacity_specs;
+mod tests_engine_contract;
 
-use validator::{ValidationRequest, ValidationResult};
+use validator_plugin::{ValidationRequest, ValidationResult};
 use vfs::{Vfs, VirtualFileSystem, CC_VFS_ID};
-use taskqueue::TaskQueue;
+use task_queue::TaskQueue;
 use logger::{global_log, LogLevel};
-use tokenwalker::{TokenWalker, build_scan_mask};
 use blacklist::{BlacklistScanProfile, blacklist_matches_to_json};
 use blacklist_cache::{BlacklistCache, BlacklistCacheEntry, BlacklistMatch};
-use wiring::get_engine;
+use blacklist_diff::{diff_rules, BlacklistDiff};
+use blacklist_summary::BlacklistSummary;
+use event_router::{Event, EventType, emit_event, get_global_router};
+use wiring_graph::WiringGraph;
+use wiring_validator::WiringValidator;
 use log::{drain_logs, LogRecord, log_info, log_warn, log_error};
 
 // wasm-bindgen is allowed as build-time glue only per design.
@@ -87,7 +98,7 @@ pub fn cclistdir(path: &str) -> String {
 #[wasm_bindgen]
 pub fn ccvalidatecode(code: &str, tags_json: &str) -> JsValue {
     let req = ValidationRequest::from_json(code, tags_json);
-    let result: ValidationResult = validator::run_validation(req);
+    let result: ValidationResult = validator_plugin::run_validation(req);
     JsValue::from_str(&result.to_json())
 }
 
@@ -184,7 +195,7 @@ pub fn cc_validate(code: &str, tags_json: &str) -> JsValue {
         &format!("Validating with tags: {}", tags_json),
     );
 
-    let result: ValidationResult = validator::run_validation(req);
+    let result: ValidationResult = validator_plugin::run_validation(req);
 
     if result.ok {
         global_log(LogLevel::Info, "cc_validate", "Validation passed");
