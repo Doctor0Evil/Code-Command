@@ -1,5 +1,5 @@
-<!-- FILE: ./specs/invariants.aln -->
-***
+<!-- FILE: .specs/invariants.aln -->
+---
 cc-invariants: [CC-FILE, CC-LANG, CC-FULL]
 kind: invariant-spec
 version: 0.1.0
@@ -35,178 +35,167 @@ tags:
   - id: CC-NAV
     active: true
     check_fn: check_cc_nav
-***
+---
 
-# CC‑ Invariants – Formal Specification [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+# CC‑ Invariants – Formal Specification
+specs/invariants.aln
 
-This document provides the **complete**, machine-friendly definition of the ten CC‑ tags, including their IDs, human descriptions, canonical check function names in Rust, and failure conditions.  The validator implementation in `core/engine/src/validator.rs` is expected to conform to this specification even though the checks themselves are hard-coded. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+This document provides the complete, machine-friendly definition of the ten CC‑ tags, including their IDs, human descriptions, canonical check function names in Rust, and failure conditions. The validator implementation in `core/engine/src/validator.rs` is expected to conform to this specification even though the checks themselves are hard-coded.
 
-***
+record BlacklistReport
+  severity: "fatal" | "critical"
+  blacklist_item: string
+  location:
+    file: string
+    line: integer
+  tag: string
+  message: string
+  required_action: string
 
-## Tag: CC-VOL (Volume Lock) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-VOL (Volume Lock)
 
-**ID:** `CC-VOL`  
-**Check Function:** `check_cc_vol(code: &str, n_min: usize) -> bool`  
-**Intent:** Ensure each artifact contains enough concrete code units to be useful in a single iteration. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-VOL`  
+Check Function: `check_cc_vol(code: &str, n_min: usize) -> bool`  
+Intent: Ensure each artifact contains enough concrete code units to be useful in a single iteration.
 
-**Behavior:**  
-- Count the number of lines that look like function or structural declarations (`fn`, `pub fn`, `struct`, `impl`, `class`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- If the count is less than `n_min` (a project-configurable threshold), the check fails. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Count the number of lines that look like function or structural declarations (`fn`, `pub fn`, `struct`, `impl`, `class`).
+- If the count is less than `n_min` (a project-configurable threshold), the check fails.
 
-**Failure Conditions:**  
-- `count < n_min` ⇒ `"CC-VOL: Insufficient number of concrete function-like declarations."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- `count < n_min` ⇒ `CC-VOL: Insufficient number of concrete function-like declarations.`
 
-***
+## Tag: CC-LANG (Sovereign Stack)
 
-## Tag: CC-LANG (Sovereign Stack) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-LANG`  
+Check Function: `check_cc_lang(path: &str) -> bool`  
+Intent: Restrict artifacts to the sovereign language stack.
 
-**ID:** `CC-LANG`  
-**Check Function:** `check_cc_lang(path: &str) -> bool`  
-**Intent:** Restrict artifacts to the sovereign language stack. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Determine the file extension from the destination path (from `CC-FILE`).
+- Accept only: `.rs`, `.js`, `.cpp`, `.h`, `.aln`, `.md`.
+- Reject any other extension.
 
-**Behavior:**  
-- Determine the file extension from the destination path (from `CC-FILE`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Accept only: `.rs`, `.js`, `.cpp`, `.h`, `.aln`, `.md`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Reject any other extension. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- Extension not in allowed set ⇒ `CC-LANG: File extension is not part of the sovereign stack.`
 
-**Failure Conditions:**  
-- Extension not in allowed set ⇒ `"CC-LANG: File extension is not part of the sovereign stack."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-CRATE (Fresh Logic)
 
-***
+ID: `CC-CRATE`  
+Check Function: `check_cc_crate(previous: &HashSet<String>, current: &HashSet<String>) -> bool`  
+Intent: Guarantee that each iteration introduces at least one new code construct.
 
-## Tag: CC-CRATE (Fresh Logic) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Build a symbol set from the current code using `collect_symbols`, scanning for names after `fn`, `struct`, `impl`, `mod`, and `class`.
+- Compare the current symbol set against a previous snapshot (supplied via `ValidationRequest.previous_symbols`).
+- Pass if there exists at least one symbol present in `current` but not in `previous`.
 
-**ID:** `CC-CRATE`  
-**Check Function:** `check_cc_crate(previous: &HashSet<String>, current: &HashSet<String>) -> bool`  
-**Intent:** Guarantee that each iteration introduces at least one new code construct. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- No new symbols found ⇒ `CC-CRATE: No new symbols introduced compared to previous snapshot.`
 
-**Behavior:**  
-- Build a symbol set from the current code using `collect_symbols`, scanning for names after `fn`, `struct`, `impl`, `mod`, and `class`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Compare the current symbol set against a previous snapshot (supplied via `ValidationRequest.previous_symbols`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass if there exists at least one symbol present in `current` but not in `previous`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-FILE (Destination Strict)
 
-**Failure Conditions:**  
-- No new symbols found ⇒ `"CC-CRATE: No new symbols introduced compared to previous snapshot."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-FILE`  
+Check Function: `extract_file_header_path(code: &str) -> Option<String>`  
+Intent: Require every file to declare its destination path explicitly.
 
-***
+Behavior:
+- Inspect the first 10 lines of the file for a header containing `FILE`.
+- Supported forms include: `// FILE: ./path`, `/* FILE: ./path */`, `<!-- FILE: ./path -->`.
+- Extract the substring after `FILE` as the path, trimming whitespace and optional `:`.
+- Pass if a non-empty path is found.
 
-## Tag: CC-FILE (Destination Strict) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- No valid `FILE` header in first 10 lines ⇒ `CC-FILE: Missing FILE header in first lines of file.`
 
-**ID:** `CC-FILE`  
-**Check Function:** `extract_file_header_path(code: &str) -> Option<String>`  
-**Intent:** Require every file to declare its destination path explicitly. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-FULL (No Excerpts)
 
-**Behavior:**  
-- Inspect the first 10 lines of the file for a header containing `FILE:`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Supported forms include: `// FILE: ./path`, `/* FILE: ./path */`, `<!-- FILE: ./path -->`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Extract the substring after `FILE:` as the path, trimming whitespace and optional `=`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass if a non-empty path is found. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-FULL`  
+Check Function: `check_cc_full(code: &str) -> bool`  
+Intent: Forbid truncated or placeholder code.
 
-**Failure Conditions:**  
-- No valid `FILE:` header in first 10 lines ⇒ `"CC-FILE: Missing FILE header in first lines of file."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Scan the entire file for banned substrings: `"..."`, `"rest of code"`, `"omitted"`.
+- Pass only if none of these patterns are present.
 
-***
+Failure Conditions:
+- Any banned substring detected ⇒ `CC-FULL: Found excerpt or placeholder markers in code.`
 
-## Tag: CC-FULL (No Excerpts) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-DEEP (Depth‑3 Struct)
 
-**ID:** `CC-FULL`  
-**Check Function:** `check_cc_full(code: &str) -> bool`  
-**Intent:** Forbid truncated or placeholder code. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-DEEP`  
+Check Function: `check_cc_deep(path: &str) -> bool`  
+Intent: Enforce that core modules reside under at least three path components.
 
-**Behavior:**  
-- Scan the entire file for banned substrings: `"..."`, `"rest of code"`, `"omitted"`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass only if none of these patterns are present. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Normalize the path (collapsing `//`, removing leading `./`).
+- Split on `/` and count non-empty segments.
+- Pass only if `segments.len() >= 3`.
 
-**Failure Conditions:**  
-- Any banned substring detected ⇒ `"CC-FULL: Found excerpt or placeholder markers in code."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- `segments.len() < 3` ⇒ `CC-DEEP: Path does not satisfy depth >= 3 after normalization.`
 
-***
+## Tag: CC-ZERO (Zero‑Setup Boot)
 
-## Tag: CC-DEEP (Depth‑3 Struct) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-ZERO`  
+Check Function: `check_cc_zero(code: &str) -> bool`  
+Intent: Prevent any setup/install logic in entrypoints.
 
-**ID:** `CC-DEEP`  
-**Check Function:** `check_cc_deep(path: &str) -> bool`  
-**Intent:** Enforce that core modules reside under at least three path components. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Scan code for banned tokens related to setup or environment: `"install"`, `"setup"`, `"std::env::temp_dir"`, `"std::env::var"`, `"pip "`, `"npm "`, `"yarn "`, `"cargo install"`.
+- Pass only if none of these tokens are present.
 
-**Behavior:**  
-- Normalize the path (collapsing `//`, removing leading `./`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Split on `/` and count non-empty segments. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass only if `segments.len() >= 3`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- Any banned token detected ⇒ `CC-ZERO: Entry file contains setup/install/environment references.`
 
-**Failure Conditions:**  
-- `segments.len() < 3` ⇒ `"CC-DEEP: Path does not satisfy depth >= 3 after normalization."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-PATH (Path Integrity)
 
-***
+ID: `CC-PATH`  
+Check Function: `check_cc_path(path: &str) -> bool`  
+Intent: Ensure all paths are portable and well-formed.
 
-## Tag: CC-ZERO (Zero‑Setup Boot) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Reject empty paths.
+- Reject any path containing backslash (`\`).
+- Reject any path containing `"//"` (double slash) after normalization.
 
-**ID:** `CC-ZERO`  
-**Check Function:** `check_cc_zero(code: &str) -> bool`  
-**Intent:** Prevent any setup/install logic in entrypoints. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- Empty path or contains backslash or double slash ⇒ `CC-PATH: Path contains backslashes, double slashes, or is empty.`
 
-**Behavior:**  
-- Scan code for banned tokens related to setup or environment: `"install"`, `"setup"`, `"std::env::temp_dir"`, `"std::env::var"`, `"pip "`, `"npm "`, `"yarn "`, `"cargo install"`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass only if none of these tokens are present. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-SOV (Sovereign Only – No Externals)
 
-**Failure Conditions:**  
-- Any banned token detected ⇒ `"CC-ZERO: Entry file contains setup/install/environment references."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-SOV`  
+Check Function: `check_cc_sov(code: &str) -> bool`  
+Intent: Forbid external crates, tools, or services in core logic.
 
-***
+Behavior:
+- For lines that look like imports (`use`, `extern crate`, `#include`, `import`, `require(`), search for banned identifiers: `"reqwest"`, `"serde_json"`, `"openai"`, `"axios"`, `"tree-sitter"`, `"syn"`.
+- Pass only if none of these identifiers appear in import-like lines.
 
-## Tag: CC-PATH (Path Integrity) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Failure Conditions:
+- Banned identifier found in an import or include ⇒ `CC-SOV: Detected external crates, tools, or services in imports.`
 
-**ID:** `CC-PATH`  
-**Check Function:** `check_cc_path(path: &str) -> bool`  
-**Intent:** Ensure all paths are portable and well-formed. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Tag: CC-NAV (Custom Navigation Mount Logic)
 
-**Behavior:**  
-- Reject empty paths. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Reject any path containing `\` (backslash). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Reject any path containing `"//"` (double slash) after normalization. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+ID: `CC-NAV`  
+Check Function: `check_cc_nav(code: &str) -> bool`  
+Intent: Require a custom directory walker instead of external traversal libraries.
 
-**Failure Conditions:**  
-- Empty path or contains backslash or double slash ⇒ `"CC-PATH: Path contains backslashes, double slashes, or is empty."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+Behavior:
+- Check for the presence of a function named `walkdir` (`"fn walkdir"` or `"pub fn walkdir"`).
+- Additionally require mentions of `"read_dir("` or `"std::fs::read_dir"` to signal actual traversal.
+- Reject if lines contain known external walkers like `"walkdir::"` or `"globwalk::"`.
+- Pass only if custom `walkdir` is present, uses `read_dir`, and no external walkers are referenced.
 
-***
+Failure Conditions:
+- No `walkdir` function, no use of `read_dir`, or banned external walkers present ⇒ `CC-NAV: Custom navigation function not found or external walker detected.`
 
-## Tag: CC-SOV (Sovereign Only – No Externals) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+## Consumption by Validator
 
-**ID:** `CC-SOV`  
-**Check Function:** `check_cc_sov(code: &str) -> bool`  
-**Intent:** Forbid external crates, tools, or services in core logic. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-**Behavior:**  
-- For lines that look like imports (`use`, `extern crate`, `#include`, `import`, `require(`), search for banned identifiers: `"reqwest"`, `"serde_json"`, `"openai"`, `"axios"`, `"tree-sitter"`, `"syn"`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass only if none of these identifiers appear in import-like lines. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-**Failure Conditions:**  
-- Banned identifier found in an import or include ⇒ `"CC-SOV: Detected external crates, tools, or services in imports."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-***
-
-## Tag: CC-NAV (Custom Navigation Mount Logic) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-**ID:** `CC-NAV`  
-**Check Function:** `check_cc_nav(code: &str) -> bool`  
-**Intent:** Require a custom directory walker instead of external traversal libraries. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-**Behavior:**  
-- Check for the presence of a function named `walk_dir` (`"fn walk_dir"` or `"pub fn walk_dir"`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Additionally require mentions of `"read_dir("` or `"std::fs::read_dir"` to signal actual traversal. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Reject if lines contain known external walkers like `"walkdir::"` or `"globwalk::"`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Pass only if custom `walk_dir` is present, uses `read_dir`, and no external walkers are referenced. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-**Failure Conditions:**  
-- No `walk_dir` function, no use of `read_dir`, or banned external walkers present ⇒ `"CC-NAV: Custom navigation function not found or external walker detected."` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-***
-
-## Consumption by Validator [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-
-The Rust validator uses this file as a declarative contract rather than as executable configuration.  On startup or at build time, it can scan the frontmatter to determine which tags are active and map each `id` to the corresponding `check_fn` implementation already compiled into `validator.rs`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+The Rust validator uses this file as a declarative contract rather than as executable configuration. On startup or at build time, it can scan the frontmatter to determine which tags are active and map each `id` to the corresponding `check_fn` implementation already compiled into `validator.rs`.
 
 In practice, this allows:
 
-- AI systems to understand which invariants exist and how they fail without reading Rust code. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- CI and tooling to cross-check that every tag ID referenced in commits, frontmatter, or manifests has a documented behavior here. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
-- Future extensions to add new tags or deprecate existing ones by updating this specification and the corresponding Rust functions in lock-step. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+- AI systems to understand which invariants exist and how they fail without reading Rust code.
+- CI and tooling to cross-check that every tag ID referenced in commits, frontmatter, or manifests has a documented behavior here.
+- Future extensions to add new tags or deprecate existing ones by updating this specification and the corresponding Rust functions in lock-step.
