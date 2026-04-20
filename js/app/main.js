@@ -112,7 +112,10 @@ function wireControls() {
 
     if (loadButton) {
         loadButton.addEventListener('click', async () => {
-            const value = (repoInput && repoInput.value) ? repoInput.value.trim() : '';
+            const value =
+                repoInput && typeof repoInput.value === 'string'
+                    ? repoInput.value.trim()
+                    : '';
             if (!value) {
                 outputPanel.logWarn('Enter owner/repo before loading.');
                 return;
@@ -163,7 +166,9 @@ async function loadRepository(owner, repo) {
         }
 
         // Update UI tree.
-        fileTree.setTree(tree);
+        if (fileTree && typeof fileTree.setTree === 'function') {
+            fileTree.setTree(tree);
+        }
         currentRepo = { owner, repo };
 
         outputPanel.logOk(`Repository loaded: ${owner}/${repo}`);
@@ -174,7 +179,7 @@ async function loadRepository(owner, repo) {
 }
 
 /**
- * Handles file selection from the FileTree component.
+ * Handle file selection from the FileTree component.
  * Load file content into the editor via ccreadfile.
  */
 async function handleFileSelect(path) {
@@ -234,7 +239,11 @@ async function runCurrentTask() {
         return;
     }
 
-    const path = (fileTree && fileTree.getActivePath && fileTree.getActivePath()) || 'src/main.rs';
+    const path =
+        (fileTree &&
+            typeof fileTree.getActivePath === 'function' &&
+            fileTree.getActivePath()) ||
+        'src/main.rs';
     const code = editor.getValue();
 
     /** @type {TaskQueuePayload} */
