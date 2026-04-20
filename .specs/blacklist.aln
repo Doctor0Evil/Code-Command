@@ -1,52 +1,85 @@
 !-- FILE .specs/blacklist.aln --
 cc-invariants CC-FILE, CC-LANG, CC-FULL, CC-SOV
-kind blacklist-rules
-version 1.0.0
+
+kind blacklist-spec
+version 1.1.0
 status active
 
 meta:
   summary "Central blacklist for forbidden tools, markers, and dynamic-eval patterns."
-  notes "This file is consumed by the Rust validator to build BlacklistRule entries at startup."
+  notes   "Consumed by the Rust validator at startup to build BlacklistRule entries. Legacy entries remain human-facing but the engine primarily uses the 'blacklist' section."
 
+# ---------------------------------------------------------------------------
 # Legacy ID-oriented entries (human-facing, still honored by the engine).
+# These are preserved for older tooling and documentation. New code should
+# prefer the canonical 'blacklist' rules below.
+# ---------------------------------------------------------------------------
 legacy:
-  - id BL-0001
+  - id    BL-0001
     token "Rust Syn"
     language rust      # rust | js | cpp | aln | md | any
     severity block     # block | warn | report
     reason "Forbidden external parsing crate name."
-  - id BL-0002
+
+  - id    BL-0002
     token "Tree-Sitter"
     language any
     severity block
     reason "Forbidden external parsing framework name."
-  - id BL-0003
+
+  - id    BL-0003
     token "(*/)"
     language any
     severity block
     reason "Reserved contamination marker."
 
-# Canonical machine-readable rules mapped to BlacklistRule { pattern, is_regex, languages, action }.
-rules:
-  # External parsing frameworks (hard block, all languages).
-  - pattern: "Rust Syn"
-    is_regex: false
-    languages: [ "Rust" ]
-    action: "block"
+# ---------------------------------------------------------------------------
+# Canonical machine-readable blacklist rules.
+#
+# Each entry conforms to BlacklistRule:
+#   id:           stable identifier
+#   pattern:      string to match
+#   pattern_type: literal | glob | regex-subset
+#   languages:    array of language hints; [] => all languages
+#   context:      import | declaration | any
+#   severity:     block | warn
+#   message:      template with placeholders:
+#                 {pattern}, {matched_text}, {path}, {line}, {column}, {context}
+# ---------------------------------------------------------------------------
+blacklist:
 
-  - pattern: "Tree-Sitter"
-    is_regex: false
-    languages: [ "Rust", "Cpp", "Js", "Aln", "Md" ]
-    action: "block"
+  # External parsing frameworks (hard block).
+  - id:           BL-0001
+    pattern:      "Tree-Sitter"
+    pattern_type: literal
+    languages:    ["rust", "js", "cpp", "aln", "md"]
+    context:      any
+    severity:     block
+    message:      "Forbidden external parser {pattern} detected in {path}:{line}."
+
+  - id:           BL-0002
+    pattern:      "Rust Syn"
+    pattern_type: literal
+    languages:    []              # all languages
+    context:      import          # only when used in imports / dependency declarations
+    severity:     block
+    message:      "Non-sovereign dependency {matched_text} is not allowed in {path}:{line}."
 
   # Reserved contamination marker — must never appear in generated artifacts.
-  - pattern: "(*/)"
-    is_regex: false
-    languages: [ "Rust", "Js", "Cpp", "Aln", "Md" ]
-    action: "block"
+  - id:           BL-0003
+    pattern:      "(*/)"
+    pattern_type: literal
+    languages:    []              # all languages
+    context:      any
+    severity:     block
+    message:      "Reserved contamination marker {pattern} detected in {path}:{line}."
 
   # Dynamic evaluation in JS: eval( ... ) — warn but do not hard-block by default.
-  - pattern: "eval\\("
-    is_regex: true
-    languages: [ "Js" ]
-    action: "warn"
+  # Uses a minimal regex-subset that the engine's custom matcher supports.
+  - id:           BL-0004
+    pattern:      "eval\\("
+    pattern_type: regex-subset
+    languages:    ["js"]
+    context:      any
+    severity:     warn
+    message:      "Dynamic evaluation via {matched_text} in {path}:{line} is discouraged; refactor to a static call."
