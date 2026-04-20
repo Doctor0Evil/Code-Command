@@ -291,6 +291,13 @@ pub struct BlacklistProfile {
     pub hard_marker_set: std::collections::HashSet<String>,
 }
 
+/// Error types for loading blacklist profiles
+#[derive(Debug)]
+pub enum BlacklistLoadError {
+    VfsReadFailed(String),
+    ParseError(String),
+}
+
 impl BlacklistProfile {
     pub fn new(rules: Vec<BlacklistRule>) -> Self {
         let rule_set = BlacklistRuleSet::from_rules(rules.clone());
@@ -322,6 +329,157 @@ impl Default for BlacklistProfile {
     fn default() -> Self {
         Self::new(Vec::new())
     }
+}
+
+/// Canonical entry point to load and merge blacklist policies from VFS
+///
+/// AI-Chat Usage:
+/// ```rust
+/// let profile = load_blacklist_profile(&vfs)?;
+/// let validator = Validator::with_blacklist(..., profile);
+/// ```
+pub fn load_blacklist_profile(vfs: &crate::vfs::Vfs) -> Result<BlacklistProfile, BlacklistLoadError> {
+    // 1. Load global spec
+    let global_content = vfs.read("specs/blacklist.aln")
+        .map_err(|e| BlacklistLoadError::VfsReadFailed(format!("specs/blacklist.aln: {}", e)))?;
+    
+    let mut rules = parse_blacklist_aln(&global_content)?;
+
+    // 2. Load repo-local overrides (optional)
+    if let Ok(local_content) = vfs.read(".ccblacklist.aln") {
+        let local_rules = parse_blacklist_aln(&local_content)?;
+        merge_rules(&mut rules, local_rules);
+    }
+
+    Ok(BlacklistProfile::new(rules))
+}
+
+/// Parses an ALN document into a list of BlacklistRules
+/// Expects a `blacklist:` key followed by a list of maps with id, token/pattern, language, severity, reason
+pub fn parse_blacklist_aln(doc: &str) -> Result<Vec<BlacklistRule>, BlacklistLoadError> {
+    let mut rules = Vec::new();
+    let mut in_block = false;
+    let mut current_rule: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+
+    for line in doc.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') { 
+            continue; 
+        }
+
+        if trimmed == "blacklist:" {
+            in_block = true;
+            continue;
+        }
+
+        if in_block {
+            if trimmed.starts_with("- id:") {
+                // Save previous rule if exists
+                if !current_rule.is_empty() {
+                    if let Some(rule) = build_rule_from_map(current_rule) {
+                        rules.push(rule);
+                    }
+                }
+                current_rule = std::collections::HashMap::new();
+                current_rule.insert("id", trimmed[5..].trim().trim_matches('"').to_string());
+            } else if trimmed.starts_with("token:") || trimmed.starts_with("pattern:") {
+                let (k, v) = trimmed.split_once(':').unwrap();
+                current_rule.insert(k.trim(), v.trim().trim_matches('"').to_string());
+            } else if trimmed.starts_with("language:") || trimmed.starts_with("severity:") || trimmed.starts_with("reason:") || trimmed.starts_with("context:") {
+                let (k, v) = trimmed.split_once(':').unwrap();
+                current_rule.insert(k.trim(), v.trim().trim_matches('"').to_string());
+            } else if !trimmed.starts_with(' ') && !trimmed.starts_with('-') && !trimmed.starts_with('\t') {
+                // End of block (new top-level key)
+                in_block = false;
+            }
+        }
+    }
+    
+    // Push last rule
+    if !current_rule.is_empty() {
+        if let Some(rule) = build_rule_from_map(current_rule) {
+            rules.push(rule);
+        }
+    }
+
+    Ok(rules)
+}
+
+fn build_rule_from_map(map: std::collections::HashMap<&str, String>) -> Option<BlacklistRule> {
+    let id = map.get("id")?.clone();
+    let token = map.get("token").cloned().or_else(|| map.get("pattern").cloned())?;
+    let language = RuleLanguage::from_str(map.get("language").cloned().unwrap_or_else(|| "any".to_string()).as_str());
+    let context = RuleContext::from_str(map.get("context").cloned().unwrap_or_else(|| "any".to_string()).as_str());
+    let severity = Severity::from_str(map.get("severity").cloned().unwrap_or_else(|| "warn".to_string()).as_str());
+    let reason = map.get("reason").cloned().unwrap_or_default();
+
+    BlacklistRule::new(id, token, language, context, severity, reason).ok()
+}
+
+fn merge_rules(global: &mut Vec<BlacklistRule>, local: Vec<BlacklistRule>) {
+    for rule in local {
+        if let Some(existing) = global.iter_mut().find(|r| r.id == rule.id) {
+            *existing = rule; // Override
+        } else {
+            global.push(rule); // Append
+        }
+    }
+}
+
+/// High-level scan entry point used by Validator and TaskQueue
+/// Returns a list of contamination reports found in the content
+pub fn scan_content(
+    profile: &BlacklistProfile,
+    code: &str,
+    path: &str,
+    language: crate::language::LanguageHint,
+    context: RuleContext,
+) -> Vec<crate::validator::ContaminationReport> {
+    use crate::validator::ContaminationReport;
+    
+    let mut reports = Vec::new();
+    let rule_lang = match language {
+        crate::language::LanguageHint::Rust => RuleLanguage::Specific("rust".to_string()),
+        crate::language::LanguageHint::JavaScript => RuleLanguage::Specific("javascript".to_string()),
+        crate::language::LanguageHint::Python => RuleLanguage::Specific("python".to_string()),
+        crate::language::LanguageHint::Unknown => RuleLanguage::Any,
+    };
+
+    // Tier 1: Fast literal check against hard markers
+    if profile.has_hard_marker(code) {
+        // Proceed to full scan
+    } else {
+        // Quick exit if no hard markers and we only care about blocks
+        // (In production, still scan for warn/report rules)
+    }
+
+    // Tier 2: Full scan via RuleSet
+    let candidates = profile.rule_set.get_rules(&rule_lang, &context);
+    for rule in candidates {
+        if let Some(_match_info) = rule.matches(code.as_bytes()) {
+            // Calculate line/col (simplified)
+            let idx = _match_info.start;
+            let line = code[..idx].lines().count() + 1;
+            let col = code[..idx].lines().last().map(|l| l.len()).unwrap_or(0) + 1;
+            
+            reports.push(ContaminationReport {
+                pattern: rule.token.clone(),
+                exact_match: true,
+                surrounding_context: "".to_string(), // Could extract snippet
+                severity: rule.severity.to_string(),
+                path: path.to_string(),
+                line,
+                column: col,
+            });
+            
+            if rule.severity == Severity::Block {
+                // Policy might dictate short-circuit on first block
+                break; 
+            }
+        }
+    }
+
+    reports
 }
 
 #[cfg(test)]

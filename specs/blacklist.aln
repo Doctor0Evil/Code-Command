@@ -1,0 +1,53 @@
+# Global Blacklist Specification for Code-Command
+# This file defines forbidden tokens and patterns across all repositories.
+# Format: ALN (Attribute List Notation)
+
+blacklist:
+  - id: "BL-0001"
+    token: "eval("
+    language: "javascript"
+    context: "code"
+    severity: "block"
+    reason: "Forbidden use of eval() - security risk."
+
+  - id: "BL-0002"
+    token: "Function("
+    language: "javascript"
+    context: "code"
+    severity: "block"
+    reason: "Forbidden use of Function constructor - security risk."
+
+  - id: "BL-0003"
+    token: "unsafe"
+    language: "rust"
+    context: "code"
+    severity: "warn"
+    reason: "Unsafe code block detected - review required."
+
+  - id: "BL-0004"
+    token: "exec("
+    language: "python"
+    context: "code"
+    severity: "block"
+    reason: "Forbidden use of exec() - security risk."
+
+  - id: "BL-0005"
+    token: "__import__"
+    language: "python"
+    context: "import"
+    severity: "block"
+    reason: "Forbidden dynamic import mechanism."
+
+  - id: "BL-0006"
+    token: "Tree-Sitter"
+    language: "any"
+    context: "any"
+    severity: "block"
+    reason: "Forbidden external parsing framework name per CC-NAV policy."
+
+  - id: "BL-0007"
+    token: "Rust Syn"
+    language: "rust"
+    context: "any"
+    severity: "block"
+    reason: "Forbidden external parsing crate name per CC-NAV policy."
