@@ -289,6 +289,40 @@ pub struct BlacklistProfile {
     pub rule_set: BlacklistRuleSet,
     /// Precomputed hard marker set for Tier-1 scanning
     pub hard_marker_set: std::collections::HashSet<String>,
+    /// Exemptions for specific paths from certain rules
+    pub exemptions: Vec<BlacklistExemption>,
+}
+
+/// Exemption for a path subtree from a set of blacklist rule IDs.
+///
+/// Any file whose normalized path starts with `path_prefix` will ignore
+/// any blacklist rule whose `id` appears in `rule_ids`.
+/// Loaded from `.ccpolicy.aln` files using `blacklist_exemptions:` ALN sections.
+#[derive(Debug, Clone)]
+pub struct BlacklistExemption {
+    /// Path prefix that this exemption applies to
+    pub path_prefix: String,
+    /// Rule IDs that are exempted for paths matching the prefix
+    pub rule_ids: Vec<String>,
+}
+
+impl BlacklistExemption {
+    pub fn new(path_prefix: &str, rule_ids: Vec<String>) -> Self {
+        BlacklistExemption {
+            path_prefix: path_prefix.to_string(),
+            rule_ids,
+        }
+    }
+    
+    /// Check if this exemption applies to the given path
+    pub fn applies_to_path(&self, path: &str) -> bool {
+        path.starts_with(&self.path_prefix)
+    }
+    
+    /// Check if this exemption exempts the given rule ID
+    pub fn exempts_rule(&self, rule_id: &str) -> bool {
+        self.rule_ids.iter().any(|id| id == rule_id)
+    }
 }
 
 /// Error types for loading blacklist profiles
@@ -311,6 +345,24 @@ impl BlacklistProfile {
             rules,
             rule_set,
             hard_marker_set,
+            exemptions: Vec::new(),
+        }
+    }
+    
+    /// Create a profile with exemptions
+    pub fn with_exemptions(rules: Vec<BlacklistRule>, exemptions: Vec<BlacklistExemption>) -> Self {
+        let rule_set = BlacklistRuleSet::from_rules(rules.clone());
+        let hard_marker_set: std::collections::HashSet<String> = rules
+            .iter()
+            .filter(|r| !r.is_pattern)
+            .map(|r| r.token.clone())
+            .collect();
+        
+        BlacklistProfile {
+            rules,
+            rule_set,
+            hard_marker_set,
+            exemptions,
         }
     }
     
@@ -322,6 +374,19 @@ impl BlacklistProfile {
             }
         }
         false
+    }
+    
+    /// Get effective rules for a given path, filtering out exempted rules
+    pub fn effective_rules_for_path(&self, path: &str) -> Vec<&BlacklistRule> {
+        self.rules
+            .iter()
+            .filter(|rule| {
+                // Check if any exemption applies to this path and rule
+                !self.exemptions.iter().any(|ex| {
+                    ex.applies_to_path(path) && ex.exempts_rule(&rule.id)
+                })
+            })
+            .collect()
     }
 }
 
