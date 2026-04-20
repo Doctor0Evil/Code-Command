@@ -1,0 +1,30 @@
+!-- FILE .core/experimental/.ccblacklist.aln --
+---
+kind: "blacklist-spec"
+version: "0.2.0"
+status: "active"
+scope:
+  path_prefix: "core/experimental"
+  mode: "override"       # or "extend"
+---
+
+blacklist:
+  # Override global severity for BL-0003 within core/experimental.
+  - id: "BL-0003"
+    token: "rest of code"
+    language: "any"
+    severity: "report"
+    reason: "Experimental modules may contain scaffold notes; treat as report only."
+
+  # Add a new experimental-only blacklist rule.
+  - id: "BL-0100"
+    token: "unsafe_experimental_api"
+    language: "rust"
+    severity: "block"
+    reason: "Disallow promotion of internal experimental API into core engine."
+
+  - id: "BL-0101"
+    token: "EXPERIMENTAL_ONLY_DO_NOT_COMMIT"
+    language: "any"
+    severity: "block"
+    reason: "Hard marker for content that must never be committed."
