@@ -333,6 +333,78 @@ pub struct WiringValidationResult {
     pub is_valid: bool,
 }
 
+/// Wiring telemetry for efficiency metrics (DR55)
+#[derive(Clone, Debug, Default)]
+pub struct WiringTelemetry {
+    /// Number of cross-module calls for a validateonly task
+    pub validateonly_cross_calls: u32,
+    /// Expected minimum (typically 3: Lib→TaskQueue→Validator→TokenWalker)
+    pub validateonly_expected_min: u32,
+    /// Efficiency ratio: expected_min / actual (1.0 = ideal, <1.0 = inefficient)
+    pub validateonly_efficiency: f32,
+    /// Breakdown of specific hops detected
+    pub has_lib_to_taskqueue: bool,
+    pub has_taskqueue_to_validator: bool,
+    pub has_validator_to_tokenwalker: bool,
+}
+
+impl WiringTelemetry {
+    pub fn new() -> Self {
+        Self {
+            validateonly_expected_min: 3,
+            ..Default::default()
+        }
+    }
+
+    /// Compute wiring telemetry from a wiring graph
+    pub fn from_graph(graph: &WiringGraph) -> Self {
+        let mut telemetry = Self::new();
+        
+        // Check for ideal path hops
+        telemetry.has_lib_to_taskqueue = graph.edges.iter().any(|e| 
+            e.from == "Lib" && e.to == "TaskQueue"
+        );
+        
+        telemetry.has_taskqueue_to_validator = graph.edges.iter().any(|e| 
+            e.from == "TaskQueue" && e.to == "Validator"
+        );
+        
+        telemetry.has_validator_to_tokenwalker = graph.edges.iter().any(|e| 
+            e.from == "Validator" && e.to == "TokenWalker"
+        );
+        
+        // Count cross-module calls for validateonly path
+        let mut cross_calls = 0u32;
+        if telemetry.has_lib_to_taskqueue { cross_calls += 1; }
+        if telemetry.has_taskqueue_to_validator { cross_calls += 1; }
+        if telemetry.has_validator_to_tokenwalker { cross_calls += 1; }
+        
+        telemetry.validateonly_cross_calls = cross_calls;
+        
+        // Compute efficiency
+        if cross_calls > 0 {
+            telemetry.validateonly_efficiency = telemetry.validateonly_expected_min as f32 / cross_calls as f32;
+        } else {
+            telemetry.validateonly_efficiency = 0.0;
+        }
+        
+        telemetry
+    }
+
+    /// Serialize to JSON for ResearchObject embedding
+    pub fn to_json(&self) -> String {
+        format!(
+            r#"{{"validateonly_cross_calls":{},"validateonly_expected_min":{},"validateonly_efficiency":{:.2},"has_lib_to_taskqueue":{},"has_taskqueue_to_validator":{},"has_validator_to_tokenwalker":{}}"#,
+            self.validateonly_cross_calls,
+            self.validateonly_expected_min,
+            self.validateonly_efficiency,
+            self.has_lib_to_taskqueue,
+            self.has_taskqueue_to_validator,
+            self.has_validator_to_tokenwalker
+        )
+    }
+}
+
 pub fn check_wiring_graph(actual: &WiringGraph, expected: &ExpectedWiring) -> WiringValidationResult {
     let mut result = WiringValidationResult {
         missing_nodes: Vec::new(),

@@ -24,7 +24,7 @@ pub mod wiring_graph;
 use validator::{ValidationRequest, ValidationResult};
 use vfs::{Vfs, VfsSnapshot};
 use taskqueue::{TaskQueue, TaskQueuePayload, TaskReport};
-use wiring_graph::{WiringGraph, build_wiring_graph, parse_wiring_spec, check_wiring_graph};
+use wiring_graph::{WiringGraph, build_wiring_graph, parse_wiring_spec, check_wiring_graph, WiringTelemetry};
 
 thread_local! {
     static VFS_INSTANCE: RefCell<Option<Vfs>> = RefCell::new(None);
@@ -466,6 +466,9 @@ pub fn cc_validate_wiring() -> String {
         
         // Include wiring graph
         json.push_str(&format!("\"wiring_graph\":{}", actual_graph.to_json()));
+        // Include wiring telemetry (DR55)
+        let telemetry = WiringTelemetry::from_graph(&actual_graph);
+        json.push_str(&format!(",\"wiring_telemetry\":{}", telemetry.to_json()));
         
         json.push('}');
         json
