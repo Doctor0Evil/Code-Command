@@ -1,0 +1,15 @@
+!-- FILE .src/ccpolicy.aln --
+kind policy-override
+version 1.0
+
+tags:
+  CC-VOL:
+    active: true
+    v_min: 6
+  CC-FULL:
+    active: true
+  CC-SOV:
+    active: true
+
+language:
+  allow: [ "rs", "aln" ]
