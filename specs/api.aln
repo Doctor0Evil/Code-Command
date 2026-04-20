@@ -267,4 +267,15 @@ Platform connectors (e.g., GitHub, GitLab, BitBucket) MUST implement the adapter
 
 The GitHub reference implementation lives at `connectors/github/adapter.js` and serves as the canonical example.  All network IO for code-bearing operations MUST flow through these adapters, never directly from the WASM engine or UI components.  This preserves `CC-SOV` and centralizes audit trails. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
 
+### 9.1. AI-Chat Command Integration
+
+Connectors that support AI-chat workflows MUST also integrate with the command compiler (`js/app/commands/ai-command-compiler.js`). The integration flow is:
+
+1. Accept command blocks (Tasks A–E) from AI-chat clients.
+2. Compile commands → SITQ payload using tag presets from `cc-policy.aln`.
+3. Execute via `ccexecutetask` and return `TaskReport`.
+4. Emit ResearchObjects to `.cc-cache/validation-reports/` and optionally push to platform.
+
+See `docs/research/coding-tasks-and-wiring-actions.md` §6 for the complete command grammar specification. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
+
 For more details on coding-tasks and wiring-actions, see `docs/research/coding-tasks-and-wiring-actions.md`. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/9abc2844-b527-41a6-984d-30e8698958eb/invariants-8Xz_1YHRT1W1xd_tCBpMyA.md)
