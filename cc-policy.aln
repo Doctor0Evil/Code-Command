@@ -295,3 +295,17 @@ A minimal loader only needs to:
 3. Pass that set into the validator when evaluating artifacts or CI runs.
 
 From there, each `check_cc_*` function can use the pseudocode above as its reference contract, guaranteeing that AI‑Chat, browser, and CI all share the same invariant definitions.
+
+***
+
+## Coding Tasks and Wiring Actions
+
+This policy surface is consumed by **coding-tasks** (SITQ payloads) and **wiring-actions** (component reconnections) documented in `docs/research/coding-tasks-and-wiring-actions.md`.  The five task families defined there rely on these CC-tags for validation:
+
+- **Task A (Normalize paths / FILE headers)** – Uses CC-FILE, CC-PATH, CC-DEEP
+- **Task B (Enforce CC-FULL / CC-VOL)** – Uses CC-FULL, CC-VOL, CC-LANG
+- **Task C (Wiring graph audit)** – Uses CC-SOV, CC-NAV, CC-FILE
+- **Task D (Blacklist scan)** – Uses CC-FULL + blacklist bitmask
+- **Task E (Connector scaffolding)** – Uses CC-FILE, CC-LANG, CC-FULL, CC-DEEP, CC-SOV
+
+All SITQ payloads MUST include the appropriate tags for each file operation, and the validator will reject writes if any tag check fails.  This ensures policy enforcement remains automated and deterministic across all coding-task executions.
