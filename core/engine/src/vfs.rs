@@ -34,6 +34,98 @@ pub struct Vfs {
     pub files: HashMap<String, FileEntry>,
 }
 
+/// A transactional overlay stack on top of Vfs.
+/// Each transaction level holds a map of pending changes and deletions.
+/// Nested transactions are supported by pushing multiple layers.
+#[derive(Debug)]
+pub struct TransactionalVfs<'a> {
+    base: &'a mut Vfs,
+    // Each layer is a map of path -> Option<Entry>.
+    // None means deletion, Some(entry) means new/updated.
+    overlays: Vec<HashMap<String, Option<FileEntry>>>,
+}
+
+impl<'a> TransactionalVfs<'a> {
+    pub fn new(base: &'a mut Vfs) -> Self {
+        TransactionalVfs {
+            base,
+            overlays: Vec::new(),
+        }
+    }
+
+    pub fn begin_tx(&mut self) {
+        self.overlays.push(HashMap::new());
+    }
+
+    pub fn commit_tx(&mut self) {
+        if let Some(layer) = self.overlays.pop() {
+            if self.overlays.is_empty() {
+                // Commit into base Vfs
+                for (path, opt_entry) in layer {
+                    match opt_entry {
+                        Some(entry) => {
+                            self.base.files.insert(path, entry);
+                        }
+                        None => {
+                            self.base.files.remove(&path);
+                        }
+                    }
+                }
+            } else {
+                // Merge into parent overlay
+                let parent = self.overlays.last_mut().unwrap();
+                for (path, opt_entry) in layer {
+                    parent.insert(path, opt_entry);
+                }
+            }
+        }
+    }
+
+    pub fn rollback_tx(&mut self) {
+        self.overlays.pop();
+    }
+
+    fn get_effective_entry(&self, path: &str) -> Option<&FileEntry> {
+        // Search from top-most overlay down to base
+        for layer in self.overlays.iter().rev() {
+            if let Some(opt_entry) = layer.get(path) {
+                return opt_entry.as_ref();
+            }
+        }
+        self.base.files.get(path)
+    }
+
+    pub fn read(&self, path: &str) -> Result<String, ()> {
+        self.get_effective_entry(path)
+            .map(|e| e.content.clone())
+            .ok_or(())
+    }
+
+    pub fn write(&mut self, path: &str, content: &str, sha: &str) -> Result<(), ()> {
+        let entry = FileEntry {
+            path: path.to_string(),
+            content: content.to_string(),
+            sha: sha.to_string(),
+            is_dir: false,
+        };
+        if let Some(layer) = self.overlays.last_mut() {
+            layer.insert(path.to_string(), Some(entry));
+        } else {
+            self.base.files.insert(path.to_string(), entry);
+        }
+        Ok(())
+    }
+
+    pub fn delete(&mut self, path: &str) -> Result<(), ()> {
+        if let Some(layer) = self.overlays.last_mut() {
+            layer.insert(path.to_string(), None);
+        } else {
+            self.base.files.remove(path);
+        }
+        Ok(())
+    }
+}
+
 /* ---------- Global VFS for WASM Engine ---------- */
 
 thread_local! {
