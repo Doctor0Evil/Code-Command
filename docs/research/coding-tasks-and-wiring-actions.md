@@ -342,14 +342,74 @@ A single `ccexecutetask` call can:
 
 ---
 
+## 6. AI-Chat Command Grammar
+
+Code-Command exposes a **line-oriented command language** that bridges natural-language AI prompts and SITQ payloads. This grammar lives in docs, in the chat connector, and as a JS helper (`js/app/commands/ai-command-compiler.js`). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_f23499fa-f1b8-4d9d-a78b-1d96ca262e69/a0605186-d167-45a2-9137-4f051ff9a7f0/code-command-research-agenda-v-K6mH4eczQ2uyz1oqq3WVkg.md)
+
+### 6.1. Command Structure
+
+- One command per line, tokens separated by spaces.
+- Optional `[key=value]` blocks for options.
+- Comments start with `#`.
+- Optional `VERSION 1` header for future compatibility.
+
+### 6.2. Core Commands (Tasks A–E)
+
+| Command | Description | Required Args | Options |
+|---------|-------------|---------------|---------|
+| `TASK_A <path>` | Normalize paths & inject FILE headers | path (directory) | — |
+| `TASK_B <path> [Vmin=N]` | Enforce CC-FULL & CC-VOL | path (directory) | Vmin (default from policy) |
+| `TASK_C <path>` | Wiring graph audit | path (module root) | — |
+| `TASK_D <path>` | Blacklist scan & contamination report | path (directory) | — |
+| `TASK_E <platform>` | Connector adapter scaffolding | platform (e.g., "github") | — |
+
+### 6.3. Example Command Block
+
+```text
+VERSION 1
+# Heal FILE headers and paths for core engine
+TASK_A coreengine/src
+
+# Enforce volume + no excerpts for Rust + JS
+TASK_B coreengine/src [Vmin=8]
+TASK_B js/app [Vmin=4]
+
+# Ensure GitHub connector is present and valid
+TASK_E github
+```
+
+### 6.4. Compilation Flow
+
+1. **AI-chat** generates command block from natural language.
+2. **Command compiler** (`ai-command-compiler.js`) parses commands → Task objects.
+3. **SITQ envelope** wraps tasks with `version: "1.0"`, `profile: "github"`.
+4. **Engine** executes via `ccexecutetask`, returns `TaskReport`.
+5. **ResearchObjects** emitted to `.cc-cache/validation-reports/`.
+
+### 6.5. Tag Presets
+
+Each Task type has predefined CC-tag sets from `cc-policy.aln`:
+
+- **TASK_A**: `[CC-FILE, CC-PATH, CC-DEEP, CC-LANG, CC-FULL, CC-SOV]`
+- **TASK_B**: `[CC-FULL, CC-VOL, CC-LANG]` (+ optional writefile with CC-SOV)
+- **TASK_C**: `[CC-FULL, CC-PATH, CC-SOV, CC-DEEP]`
+- **TASK_D**: `[CC-FULL, CC-LANG]` + blacklist ScanProfile
+- **TASK_E**: `[CC-FILE, CC-LANG, CC-FULL, CC-DEEP, CC-SOV]`
+
+See `js/app/commands/ai-command-compiler.js` for the canonical implementation.
+
+---
+
 ## 7. Implementation Checklist
 
 - [x] Create `connectors/github/adapter.js` with full contract
 - [x] Create `.cc-cache/` directory structure
-- [ ] Implement Task A payload generator in JS host
-- [ ] Implement Task B volume checker integration
+- [x] Implement Task A–E payload generator in JS host (`js/app/commands/ai-command-compiler.js`)
+- [ ] Implement Task B volume checker integration with cc-token-walker
 - [ ] Wire Task C wiring-graph generation to cc-token-walker
 - [ ] Integrate Task D blacklist scan into validator pipeline
-- [ ] Build Task E adapter scaffolding automation
+- [ ] Build Task E adapter scaffolding automation (auto-detect missing platforms)
 - [ ] Update `specs/wiring-spec.aln` with connector node
 - [ ] Document ResearchObject schema for benchmark outputs
+- [ ] Add UI presets in `js/app/main.js` for Tasks A–E
+- [ ] Implement ResearchObject emitter to write to `.cc-cache/validation-reports/`
