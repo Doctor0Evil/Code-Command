@@ -1,44 +1,76 @@
 // FILE: ./js/app/editor/file-tree.js
 
-// Virtual file tree component for Code-Command. Renders a nested <ul>/<li>
-// structure from a GitHub API tree object and emits file selection events. [file:2]
+// Virtual file tree component for Code-Command.
+// Renders a nested <ul>/<li> structure from a VFS-backed model and emits
+// file selection events when a file node is clicked.
 
-import * as GithubAPI from "../github/api.js";
+import { eventBus } from "../event-bus.js";
+import { VfsTreeModel } from "../vfs-tree-model.js";
 
 export class FileTree {
   /**
    * @param {HTMLElement} container
-   * @param {{ onFileSelect: (path: string) => void }} callbacks
+   * @param {{ onFileSelect?: (path: string) => void }} callbacks
    */
   constructor(container, callbacks = {}) {
     this.container = container;
     this.onFileSelect = callbacks.onFileSelect || (() => {});
-    this.tree = null;
+    this.model = new VfsTreeModel();
     this.activePath = null;
+
+    // Subscribe to VFS changes so the tree stays in sync with the engine.
+    eventBus.on("vfs:updated", (evt) => this.onVfsUpdated(evt));
   }
 
   /**
-   * Sets the internal tree model and re-renders the UI. [file:2]
-   * `tree` is expected to be an array of entries like:
-   *   { path: "src/main.rs", type: "blob" | "tree" }
+   * Manually seed the tree model from a VFS snapshot-style array.
+   * Each entry should look like:
+   *   { path: "src/main.rs", isDir: false, sha: "..." }
    */
-  setTree(tree) {
-    this.tree = buildNestedTree(tree || []);
+  setFromSnapshot(entries) {
+    this.model.seedFromSnapshot(entries || []);
     this.render();
   }
 
   /**
-   * Returns the currently active file path, if any. [file:2]
+   * Handle vfs:updated events from the event bus.
+   * evt.changes is expected to be a list of:
+   *   { kind: "write" | "delete", path: string, sha?: string }
+   */
+  onVfsUpdated(evt) {
+    if (!evt || !Array.isArray(evt.changes)) {
+      return;
+    }
+
+    for (const change of evt.changes) {
+      if (!change || typeof change.path !== "string") continue;
+
+      if (change.kind === "write") {
+        this.model.applyWrite(change.path, /* isDir */ false, change.sha || "");
+      } else if (change.kind === "delete") {
+        this.model.applyDelete(change.path);
+      }
+    }
+
+    this.render();
+  }
+
+  /**
+   * Returns the currently active file path, if any.
    */
   getActivePath() {
     return this.activePath;
   }
 
+  /**
+   * Re-render the entire tree from the current model.
+   */
   render() {
     if (!this.container) return;
     this.container.innerHTML = "";
 
-    if (!this.tree || this.tree.children.length === 0) {
+    const roots = this.model.rootChildren || [];
+    if (!roots.length) {
       const div = document.createElement("div");
       div.textContent = "No repository loaded.";
       div.style.fontSize = "12px";
@@ -52,14 +84,25 @@ export class FileTree {
     rootList.style.margin = "0";
     rootList.style.padding = "0";
 
-    this.tree.children.forEach((node) => {
+    roots.forEach((node) => {
       const li = this.renderNode(node, 0);
       rootList.appendChild(li);
     });
 
     this.container.appendChild(rootList);
+
+    // Re-apply active path highlight after re-render.
+    if (this.activePath) {
+      this.highlightActive(this.activePath);
+    }
   }
 
+  /**
+   * Render a single node (file or directory) and its children.
+   *
+   * Node shape (from VfsTreeModel):
+   *   { path: string, name: string, isDir: boolean, children?: Node[] }
+   */
   renderNode(node, depth) {
     const li = document.createElement("li");
     li.style.margin = "0";
@@ -68,7 +111,7 @@ export class FileTree {
     const row = document.createElement("div");
     row.style.display = "flex";
     row.style.alignItems = "center";
-    row.style.cursor = node.type === "blob" ? "pointer" : "default";
+    row.style.cursor = node.isDir ? "default" : "pointer";
 
     const indent = document.createElement("span");
     indent.style.display = "inline-block";
@@ -79,7 +122,7 @@ export class FileTree {
     icon.style.display = "inline-block";
     icon.style.width = "12px";
     icon.style.marginRight = "4px";
-    icon.textContent = node.type === "tree" ? "" : "";
+    icon.textContent = node.isDir ? "" : "";
     icon.style.fontFamily = "monospace";
     icon.style.fontSize = "11px";
     row.appendChild(icon);
@@ -88,15 +131,14 @@ export class FileTree {
     label.textContent = node.name;
     label.style.fontSize = "12px";
     label.style.color = "#e5e7eb";
+    label.dataset.ccPath = node.path;
 
-    // CC-DEEP: visually highlight nodes at depth >= 3. [file:2]
+    // CC-DEEP: visually highlight nodes at depth >= 3.
     if (depth >= 2) {
       label.style.color = "#60a5fa";
     }
 
-    row.appendChild(label);
-
-    if (node.type === "blob") {
+    if (!node.isDir) {
       row.addEventListener("click", () => {
         this.activePath = node.path;
         this.highlightActive(node.path);
@@ -104,17 +146,23 @@ export class FileTree {
       });
     }
 
+    row.appendChild(label);
     li.appendChild(row);
 
-    if (node.type === "tree" && node.children && node.children.length > 0) {
+    if (node.isDir && node.children && node.children.length > 0) {
       const ul = document.createElement("ul");
       ul.style.listStyle = "none";
       ul.style.margin = "0";
       ul.style.padding = "0";
-      node.children.forEach((child) => {
-        const childLi = this.renderNode(child, depth + 1);
-        ul.appendChild(childLi);
-      });
+
+      node.children
+        .slice()
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .forEach((child) => {
+          const childLi = this.renderNode(child, depth + 1);
+          ul.appendChild(childLi);
+        });
+
       li.appendChild(ul);
     }
 
@@ -122,9 +170,10 @@ export class FileTree {
   }
 
   /**
-   * Highlights the currently active file path in the tree. [file:2]
+   * Highlights the currently active file path in the tree.
    */
   highlightActive(path) {
+    if (!this.container) return;
     const labels = this.container.querySelectorAll("[data-cc-path]");
     labels.forEach((el) => {
       if (el.getAttribute("data-cc-path") === path) {
@@ -133,68 +182,5 @@ export class FileTree {
         el.style.backgroundColor = "transparent";
       }
     });
-  }
-}
-
-/* ---------- Tree Construction Helpers ---------- */ [file:2]
-
-function buildNestedTree(entries) {
-  const root = {
-    name: "",
-    path: "",
-    type: "tree",
-    children: [],
-  };
-
-  for (const entry of entries) {
-    const path = (entry.path || "").trim();
-    if (!path) continue;
-
-    const parts = path.split("/").filter((p) => p.length > 0);
-    let cursor = root;
-    let currentPath = "";
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      currentPath = currentPath ? currentPath + "/" + part : part;
-
-      const isLeaf = i === parts.length - 1;
-      if (isLeaf) {
-        cursor.children.push({
-          name: part,
-          path: currentPath,
-          type: entry.type === "tree" ? "tree" : "blob",
-          children: [],
-        });
-      } else {
-        let child = cursor.children.find(
-          (c) => c.name === part && c.type === "tree"
-        );
-        if (!child) {
-          child = {
-            name: part,
-            path: currentPath,
-            type: "tree",
-            children: [],
-          };
-          cursor.children.push(child);
-        }
-        cursor = child;
-      }
-    }
-  }
-
-  // Attach data-cc-path attributes after building (for highlightActive). [file:2]
-  decoratePaths(root);
-  return root;
-}
-
-function decoratePaths(node) {
-  if (!node) return;
-  if (node.type === "blob" || node.type === "tree") {
-    node.dataPath = node.path;
-  }
-  if (node.children) {
-    node.children.forEach(decoratePaths);
   }
 }
