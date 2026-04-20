@@ -1,0 +1,9 @@
+[package]
+name = "oss-navigator"
+version = "0.1.0"
+edition = "2021"
+description = "Custom navigator for /mnt/oss to report storage usage by crate and target profile."
+license = "MIT"
+
+[dependencies]
+# Sovereign: standard library only, no external crates.
