@@ -1,0 +1,23 @@
+{
+  "kind": "WIRING-MANIFEST-1",
+  "version": "1.0.0",
+  "engine_id": "cc-engine1",
+  "vfs_id": "cc-vfs1",
+  "nodes": [
+    { "id": "Lib",         "role": "wasm-export-surface" },
+    { "id": "Validator",   "role": "validation-engine" },
+    { "id": "Vfs",         "role": "virtual-file-system" },
+    { "id": "Navigator",   "role": "directory-traversal" },
+    { "id": "TaskQueue",   "role": "sitq-executor" },
+    { "id": "TokenWalker", "role": "structural-scanner" }
+  ],
+  "edges": [
+    { "from": "Lib", "to": "Vfs",       "via": ["ccInitVfs", "ccReadFile", "ccWriteFile", "ccListDir"] },
+    { "from": "Lib", "to": "Validator", "via": ["ccValidateCode"] },
+    { "from": "Lib", "to": "TaskQueue", "via": ["ccExecuteTask"] },
+    { "from": "TaskQueue", "to": "Vfs",       "via": ["read", "write"] },
+    { "from": "TaskQueue", "to": "Validator", "via": ["run_validation"] },
+    { "from": "Validator", "to": "TokenWalker", "via": ["scan"] },
+    { "from": "Navigator", "to": "Vfs", "via": ["walkdir", "list"] }
+  ]
+}
