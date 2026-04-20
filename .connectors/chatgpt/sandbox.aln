@@ -11,12 +11,25 @@ allowed_apis:
   - "console.log"
 
 banned_globals:
+  - "window"
+  - "document"
+  - "localStorage"
+  - "sessionStorage"
+  - "fetch:*"           # any non-whitelisted fetch target
+  - "XMLHttpRequest"
+  - "WebSocket"
+  - "EventSource"
+  - "Worker"
+  - "SharedWorker"
+  - "BroadcastChannel"
   - "eval"
   - "Function"
   - "import()"
-  - "WebSocket"
-  - "fetch:*"        # any non-whitelisted fetch target
-  - "window"
-  - "document"
+  - "require"
+  - "process"
+  - "global"
+  - "globalThis"
+  - "navigator"
+  - "IndexedDB"
 
 max_runtime_ms: 2000
