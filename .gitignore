@@ -1,19 +1,16 @@
-```rust
+```
 # Compiled and build artifacts
 *.o
 *.obj
-*.a
-*.lib
-*.so
-*.dll
-*.dylib
 *.exe
-target/
+*.dll
+*.so
+*.a
+*.out
 
 # Dependencies
-Cargo.lock
-vendor/
-.cargo/
+target/
+**/target/
 
 # Logs and temp files
 *.log
@@ -23,16 +20,38 @@ vendor/
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
+
+# Environment
+.env
+.env.local
+*.env.*
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Environment
-.env
-.env.local
-.env.*
+# Compression
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

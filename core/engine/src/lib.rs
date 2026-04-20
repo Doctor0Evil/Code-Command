@@ -12,6 +12,9 @@ mod tokenwalker;
 mod blacklist;
 mod blacklist_cache;
 mod wiring;
+mod log;
+mod path;
+mod cache_key;
 
 use validator::{ValidationRequest, ValidationResult};
 use vfs::{Vfs, VirtualFileSystem, CC_VFS_ID};
@@ -21,6 +24,7 @@ use tokenwalker::{TokenWalker, build_scan_mask};
 use blacklist::{BlacklistScanProfile, blacklist_matches_to_json};
 use blacklist_cache::{BlacklistCache, BlacklistCacheEntry, BlacklistMatch};
 use wiring::get_engine;
+use log::{drain_logs, LogRecord, log_info, log_warn, log_error};
 
 // wasm-bindgen is allowed as build-time glue only per design.
 use wasm_bindgen::prelude::*;
@@ -325,4 +329,171 @@ pub fn cc_execute_task(task_json: &str) -> String {
 
     global_log(LogLevel::Error, "cc_execute_task", "VFS not initialized");
     TaskQueue::empty_failure("VFS not initialized").to_json()
+}
+
+/// Returns all pending log records as a JSON array and clears the buffer.
+/// JS should poll this periodically and dispatch to OutputPanel.
+#[wasm_bindgen]
+pub fn cc_poll_logs() -> String {
+    let records = drain_logs();
+    logs_to_json(&records)
+}
+
+fn logs_to_json(records: &[LogRecord]) -> String {
+    let mut out = String::new();
+    out.push('[');
+    for (i, r) in records.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push('{');
+        push_json_kv_str(&mut out, "level", &r.level);
+        out.push(',');
+        push_json_kv_str(&mut out, "component", &r.component);
+        out.push(',');
+        push_json_kv_str(&mut out, "message", &r.message);
+        out.push(',');
+        push_json_kv_str(&mut out, "correlation_id", &r.correlation_id);
+        out.push(',');
+        push_json_kv_str(&mut out, "timestamp", &r.timestamp);
+        out.push('}');
+    }
+    out.push(']');
+    out
+}
+
+fn push_json_kv_str(out: &mut String, key: &str, val: &str) {
+    out.push('"');
+    out.push_str(key);
+    out.push('"');
+    out.push(':');
+    out.push('"');
+    for ch in val.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+/// Returns the wiring graph as compact JSON for external tools.
+#[wasm_bindgen]
+pub fn cc_get_wiring_json() -> String {
+    let engine = match get_engine() {
+        Some(e) => e,
+        None => return "{}".to_string(),
+    };
+
+    let manifest = &engine.wiring;
+    let graph = manifest.to_graph();
+    graph.to_json()
+}
+
+/// Benchmarks the token walker with optional blacklist scanning.
+/// profile_json: { "language":"rust", "tags":["CC-VOL","CC-SOV"], "want_blacklist": true }
+/// Returns JSON with time_ms_base, time_ms_with_blacklist, throughput_line, 
+/// throughput_byte, symbol_count, blacklist_hits.
+#[wasm_bindgen]
+pub fn cc_bench_token_walker(code: &str, profile_json: &str) -> String {
+    use crate::tokenwalker::{LanguageHint, ScanProfile};
+    use crate::blacklist::BlacklistProfile;
+
+    // Parse profile_json manually
+    let mut language = LanguageHint::Rust;
+    let mut tags: Vec<String> = Vec::new();
+    let mut want_blacklist = false;
+
+    for raw in profile_json.split(|c| c == '{' || c == '}' || c == '[' || c == ']' || c == ',') {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with("\"language\"") {
+            if let Some(idx) = line.find(':') {
+                let val = line[idx + 1..].trim().trim_matches('"');
+                language = match val {
+                    "rust" => LanguageHint::Rust,
+                    "js" | "javascript" => LanguageHint::Js,
+                    "cpp" | "cxx" | "c++" => LanguageHint::Cpp,
+                    "aln" => LanguageHint::Aln,
+                    "md" | "markdown" => LanguageHint::Md,
+                    _ => LanguageHint::Rust,
+                };
+            }
+        } else if line.starts_with("\"want_blacklist\"") {
+            if let Some(idx) = line.find(':') {
+                let val = line[idx + 1..].trim();
+                want_blacklist = val.starts_with('t') || val.starts_with("true");
+            }
+        } else if line.starts_with('"') {
+            let val = line.trim_matches('"');
+            if !val.contains(':') && !val.eq_ignore_ascii_case("language") && !val.eq_ignore_ascii_case("want_blacklist") {
+                tags.push(val.to_string());
+            }
+        }
+    }
+
+    let total_bytes = code.as_bytes().len() as f64;
+    let total_lines = code.lines().count() as f64;
+
+    // Baseline pass without blacklist
+    let start = js_now_ms();
+    let mask_base = build_scan_mask(&tags, language, false);
+    let mut walker = TokenWalker::new(code, mask_base, language);
+    let symbols = walker.collect_symbols();
+    let end = js_now_ms();
+    let time_ms_base = (end - start) as f64;
+    let symbol_count = symbols.len() as u32;
+
+    let mut time_ms_with_blacklist = time_ms_base;
+    let mut blacklist_hits = 0u32;
+
+    if want_blacklist {
+        let engine = match get_engine() {
+            Some(e) => e,
+            None => return "{}".to_string(),
+        };
+        let blacklist: &BlacklistProfile = &engine.validator.blacklist_profile;
+        let mask_bl = build_scan_mask(&tags, language, true);
+
+        let start_bl = js_now_ms();
+        let mut walker_bl = TokenWalker::new(code, mask_bl, language);
+        let matches = walker_bl.scan_blacklist_only(blacklist);
+        let end_bl = js_now_ms();
+        time_ms_with_blacklist = (end_bl - start_bl) as f64;
+        blacklist_hits = matches.len() as u32;
+    }
+
+    let throughput_line = if time_ms_base > 0.0 { total_lines / time_ms_base } else { 0.0 };
+    let throughput_byte = if time_ms_base > 0.0 { total_bytes / time_ms_base } else { 0.0 };
+
+    let mut out = String::new();
+    out.push('{');
+    push_json_kv_str(&mut out, "time_ms_base", &format!("{:.3}", time_ms_base));
+    out.push(',');
+    push_json_kv_str(&mut out, "time_ms_with_blacklist", &format!("{:.3}", time_ms_with_blacklist));
+    out.push(',');
+    push_json_kv_str(&mut out, "throughput_line", &format!("{:.3}", throughput_line));
+    out.push(',');
+    push_json_kv_str(&mut out, "throughput_byte", &format!("{:.3}", throughput_byte));
+    out.push(',');
+    push_json_kv_str(&mut out, "symbol_count", &symbol_count.to_string());
+    out.push(',');
+    push_json_kv_str(&mut out, "blacklist_hits", &blacklist_hits.to_string());
+    out.push('}');
+    out
+}
+
+fn js_now_ms() -> u64 {
+    // Fallback timestamp for benchmarking
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
