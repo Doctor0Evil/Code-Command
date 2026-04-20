@@ -1,1 +1,38 @@
-Nothing should be ignored based on the provided file changes. The changes only include Rust source files (.rs) which are source code and should not be ignored.
+```rust
+# Compiled and build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+target/
+
+# Dependencies
+Cargo.lock
+vendor/
+.cargo/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Environment
+.env
+.env.local
+.env.*
+```
