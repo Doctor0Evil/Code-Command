@@ -1,10 +1,15 @@
 !-- FILE .specs/blacklist.aln --
-cc-invariants CC-FILE, CC-LANG, CC-FULL
-kind blacklist-spec
-version 0.1.0
+cc-invariants CC-FILE, CC-LANG, CC-FULL, CC-SOV
+kind blacklist-rules
+version 1.0.0
 status active
 
-blacklist:
+meta:
+  summary "Central blacklist for forbidden tools, markers, and dynamic-eval patterns."
+  notes "This file is consumed by the Rust validator to build BlacklistRule entries at startup."
+
+# Legacy ID-oriented entries (human-facing, still honored by the engine).
+legacy:
   - id BL-0001
     token "Rust Syn"
     language rust      # rust | js | cpp | aln | md | any
@@ -20,3 +25,28 @@ blacklist:
     language any
     severity block
     reason "Reserved contamination marker."
+
+# Canonical machine-readable rules mapped to BlacklistRule { pattern, is_regex, languages, action }.
+rules:
+  # External parsing frameworks (hard block, all languages).
+  - pattern: "Rust Syn"
+    is_regex: false
+    languages: [ "Rust" ]
+    action: "block"
+
+  - pattern: "Tree-Sitter"
+    is_regex: false
+    languages: [ "Rust", "Cpp", "Js", "Aln", "Md" ]
+    action: "block"
+
+  # Reserved contamination marker — must never appear in generated artifacts.
+  - pattern: "(*/)"
+    is_regex: false
+    languages: [ "Rust", "Js", "Cpp", "Aln", "Md" ]
+    action: "block"
+
+  # Dynamic evaluation in JS: eval( ... ) — warn but do not hard-block by default.
+  - pattern: "eval\\("
+    is_regex: true
+    languages: [ "Js" ]
+    action: "warn"
