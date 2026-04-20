@@ -1,0 +1,39 @@
+/* FILE: ./js/app/styles/output-panel.css */
+
+.cc-contamination-report {
+  background-color: #7f1d1d;  /* dark red */
+  color: #fee2e2;
+  border-left: 4px solid #f97373;
+  padding: 8px 10px;
+  margin: 6px 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.cc-contamination-icon {
+  display: inline-block;
+  background-color: #b91c1c;
+  color: #fee2e2;
+  border-radius: 999px;
+  font-weight: bold;
+  padding: 0 6px;
+  margin-right: 6px;
+}
+
+.cc-contamination-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.cc-contamination-body {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.cc-contamination-context {
+  margin-top: 4px;
+  padding: 4px 6px;
+  background-color: #111827;
+  color: #f9fafb;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
