@@ -1,11 +1,31 @@
 !-- FILE .specs/wiring-spec.aln --
 kind wiring-spec
 version 1.0
-nodes [ "Lib", "Validator", "Vfs", "Navigator", "TaskQueue" ]
+
+# Core engine nodes as defined in DR45 and wiring-graph.rs
+nodes [ "Lib", "Validator", "Vfs", "Navigator", "TaskQueue", "TokenWalker" ]
+
+# Required wiring edges (from, to, via_pattern)
+# These represent the canonical data flow through the engine
 edges:
+  # Lib orchestrates all operations
   - from "Lib"       to "Vfs"       via "ccinitvfs,ccreadfile,ccwritefile,cclistdir"
   - from "Lib"       to "Validator" via "ccvalidatecode"
   - from "Lib"       to "TaskQueue" via "ccexecutetask"
+  
+  # TaskQueue executes tasks with validation
   - from "TaskQueue" to "Vfs"       via "read,write"
   - from "TaskQueue" to "Validator" via "run_validation"
-  - from "Navigator" to "Vfs"       via "walkdir"
+  
+  # Navigator traverses VFS tree (CC-NAV)
+  - from "Navigator" to "Vfs"       via "walkdir,list"
+  
+  # Validator uses TokenWalker for structural analysis (Tier-2)
+  - from "Validator" to "TokenWalker" via "scan,token-walker"
+
+# Forbidden edges - violations of CC-SOV and TaskQueue invariants
+# These represent shortcuts that bypass required layers
+forbidden:
+  - from "Lib" to "Navigator"      # Lib must not bypass TaskQueue for navigation
+  - from "Lib" to "TokenWalker"    # Lib must not call TokenWalker directly (goes through Validator)
+  - from "TaskQueue" to "Navigator" # TaskQueue must not use Navigator (uses direct VFS ops)

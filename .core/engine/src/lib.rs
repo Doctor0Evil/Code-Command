@@ -19,10 +19,12 @@ mod validator;
 mod vfs;
 mod navigator;
 mod taskqueue;
+pub mod wiring_graph;
 
 use validator::{ValidationRequest, ValidationResult};
 use vfs::{Vfs, VfsSnapshot};
 use taskqueue::{TaskQueue, TaskQueuePayload, TaskReport};
+use wiring_graph::{WiringGraph, build_wiring_graph, parse_wiring_spec, check_wiring_graph};
 
 thread_local! {
     static VFS_INSTANCE: RefCell<Option<Vfs>> = RefCell::new(None);
@@ -352,4 +354,120 @@ fn parse_tags_json(tags_json: &str) -> Vec<String> {
     }
 
     tags
+}
+
+/// cc_build_wiring_graph
+///
+/// Build and return the wiring graph JSON for the current VFS state.
+/// Used by Task C (wiring audit) to generate ResearchObjects.
+#[wasm_bindgen]
+pub fn cc_build_wiring_graph() -> String {
+    VFS_INSTANCE.with(|cell| {
+        let borrowed = cell.borrow();
+        let vfs = borrowed.as_ref();
+        
+        // Build a HashMap of file contents from VFS
+        let mut vfs_content = std::collections::HashMap::new();
+        if let Some(vfs) = vfs {
+            // Extract core engine files for wiring analysis
+            let core_files = [
+                "coreengine/src/lib.rs",
+                "coreengine/src/validator.rs", 
+                "coreengine/src/vfs.rs",
+                "coreengine/src/navigator.rs",
+                "coreengine/src/taskqueue.rs",
+                "coreengine/src/tokenwalker.rs",
+            ];
+            
+            for path in &core_files {
+                if let Ok(content) = vfs.read_file(path) {
+                    vfs_content.insert(path.to_string(), content);
+                }
+            }
+        }
+        
+        let graph = build_wiring_graph(&vfs_content);
+        graph.to_json()
+    })
+}
+
+/// cc_validate_wiring
+///
+/// Validate the current wiring graph against specs/wiring-spec.aln.
+/// Returns a JSON object with validation results.
+#[wasm_bindgen]
+pub fn cc_validate_wiring() -> String {
+    VFS_INSTANCE.with(|cell| {
+        let borrowed = cell.borrow();
+        let vfs = borrowed.as_ref();
+        
+        // Build actual wiring graph
+        let mut vfs_content = std::collections::HashMap::new();
+        let mut spec_content = String::new();
+        
+        if let Some(vfs) = vfs {
+            // Load core engine files
+            let core_files = [
+                ".core/engine/src/lib.rs",
+                ".core/engine/src/validator.rs", 
+                ".core/engine/src/vfs.rs",
+                ".core/engine/src/navigator.rs",
+                ".core/engine/src/taskqueue.rs",
+                ".core/engine/src/tokenwalker.rs",
+            ];
+            
+            for path in &core_files {
+                if let Ok(content) = vfs.read_file(path) {
+                    vfs_content.insert(path.to_string(), content);
+                }
+            }
+            
+            // Load wiring spec
+            if let Ok(spec) = vfs.read_file(".specs/wiring-spec.aln") {
+                spec_content = spec;
+            }
+        }
+        
+        let actual_graph = build_wiring_graph(&vfs_content);
+        let expected = parse_wiring_spec(&spec_content);
+        let result = check_wiring_graph(&actual_graph, &expected);
+        
+        // Build JSON result
+        let mut json = String::from("{");
+        json.push_str(&format!("\"is_valid\":{},", result.is_valid));
+        
+        if !result.missing_nodes.is_empty() {
+            json.push_str(&format!("\"missing_nodes\":[{}],", 
+                result.missing_nodes.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")));
+        } else {
+            json.push_str("\"missing_nodes\":[],");
+        }
+        
+        if !result.extra_nodes.is_empty() {
+            json.push_str(&format!("\"extra_nodes\":[{}],", 
+                result.extra_nodes.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")));
+        } else {
+            json.push_str("\"extra_nodes\":[],");
+        }
+        
+        if !result.missing_edges.is_empty() {
+            json.push_str(&format!("\"missing_edges\":[{}],", 
+                result.missing_edges.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect::<Vec<_>>().join(",")));
+        } else {
+            json.push_str("\"missing_edges\":[],");
+        }
+        
+        if !result.forbidden_violations.is_empty() {
+            json.push_str(&format!("\"forbidden_violations\":[{}],", 
+                result.forbidden_violations.iter().map(|s| format!("\"{}\"", s.replace('"', "\\\""))).collect::<Vec<_>>().join(",")));
+        } else {
+            json.push_str("\"forbidden_violations\":[],");
+        }
+        
+        // Include wiring graph
+        json.push_str(&format!("\"wiring_graph\":{}", actual_graph.to_json()));
+        
+        json.push('}');
+        json
+    })
 }
