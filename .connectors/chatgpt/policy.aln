@@ -1,0 +1,7 @@
+cc-invariants: CC-FILE, CC-LANG, CC-FULL
+kind: connector-policy
+platform: chatgpt
+allowed-ops:
+  - cc_init_vfs
+  - cc_validate_code
+  - cc_execute_task
