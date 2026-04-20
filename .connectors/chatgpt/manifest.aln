@@ -1,0 +1,6 @@
+cc-invariants: CC-FILE, CC-LANG, CC-DEEP
+kind: connector-manifest
+platform: chatgpt
+version: 0.1.0
+entry-js: .connectors/chatgpt/adapter.js
+policy: .connectors/chatgpt/policy.aln
