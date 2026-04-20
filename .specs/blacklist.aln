@@ -1,0 +1,22 @@
+!-- FILE .specs/blacklist.aln --
+cc-invariants CC-FILE, CC-LANG, CC-FULL
+kind blacklist-spec
+version 0.1.0
+status active
+
+blacklist:
+  - id BL-0001
+    token "Rust Syn"
+    language rust      # rust | js | cpp | aln | md | any
+    severity block     # block | warn | report
+    reason "Forbidden external parsing crate name."
+  - id BL-0002
+    token "Tree-Sitter"
+    language any
+    severity block
+    reason "Forbidden external parsing framework name."
+  - id BL-0003
+    token "(*/)"
+    language any
+    severity block
+    reason "Reserved contamination marker."
