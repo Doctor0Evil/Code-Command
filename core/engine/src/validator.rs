@@ -37,11 +37,27 @@ impl ValidationRequest {
     }
 }
 
+/// Structured report describing a blacklist contamination event.
+///
+/// This is attached to ValidationResult when a (*/)-style blacklist item is found
+/// so that callers can inspect precise pattern, location, and severity.
+#[derive(Clone, Debug)]
+pub struct ContaminationReport {
+    pub pattern: String,             // blacklist token, e.g. "Tree-Sitter"
+    pub exact_match: String,         // exact substring found in code
+    pub surrounding_context: String, // window around match (e.g. line or ±N chars)
+    pub severity: String,            // "block" | "warn" | "report"
+    pub path: String,                // file path from CC-FILE
+    pub line: u32,                   // 1-based line number (best-effort)
+    pub column: u32,                 // 1-based column (best-effort)
+}
+
 /// Result of applying all requested CC- checks to a single artifact.
 #[derive(Clone, Debug)]
 pub struct ValidationResult {
     pub ok: bool,
     pub failures: Vec<String>,
+    pub contaminations: Vec<ContaminationReport>,
 }
 
 impl ValidationResult {
@@ -49,12 +65,21 @@ impl ValidationResult {
         Self {
             ok: true,
             failures: Vec::new(),
+            contaminations: Vec::new(),
         }
     }
 
     pub fn fail(&mut self, tag: &str, reason: &str) {
         self.ok = false;
         self.failures.push(format!("{}: {}", tag, reason));
+    }
+
+    pub fn add_contamination(&mut self, report: ContaminationReport) {
+        // Any contamination with severity "block" forces ok = false.
+        if report.severity == "block" {
+            self.ok = false;
+        }
+        self.contaminations.push(report);
     }
 
     pub fn to_json(&self) -> String {
@@ -70,25 +95,52 @@ impl ValidationResult {
             out.push_str(&escape_json(f));
             out.push('"');
         }
+        out.push_str("],\"contaminations\":[");
+        for (i, c) in self.contaminations.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str("{\"pattern\":\"");
+            out.push_str(&escape_json(&c.pattern));
+            out.push_str("\",\"exact_match\":\"");
+            out.push_str(&escape_json(&c.exact_match));
+            out.push_str("\",\"surrounding_context\":\"");
+            out.push_str(&escape_json(&c.surrounding_context));
+            out.push_str("\",\"severity\":\"");
+            out.push_str(&escape_json(&c.severity));
+            out.push_str("\",\"path\":\"");
+            out.push_str(&escape_json(&c.path));
+            out.push_str("\",\"line\":");
+            out.push_str(&c.line.to_string());
+            out.push_str(",\"column\":");
+            out.push_str(&c.column.to_string());
+            out.push('}');
+        }
         out.push_str("]}");
         out
     }
 }
 
 /// Main entry for the CC-Engine: run all requested invariant checks.
+/// This function is pure and deterministic given the same input.
 pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     let mut result = ValidationResult::new();
 
     // Precompute header path if needed by several tags.
-    let need_path = req
-        .tags
-        .iter()
-        .any(|t| t == "CC-FILE" || t == "CC-DEEP" || t == "CC-PATH" || t == "CC-LANG");
+    let need_path = req.tags.iter().any(|t| {
+        t == "CC-FILE" || t == "CC-DEEP" || t == "CC-PATH" || t == "CC-LANG"
+    });
     let header_path = if need_path {
         extract_file_header_path(&req.code)
     } else {
         None
     };
+
+    // Optional blacklist scan: this can be activated either via a dedicated tag
+    // (e.g., "CC-BLACKLIST") or always-on for core policy files.
+    if req.tags.iter().any(|t| t == "CC-BLACKLIST") {
+        run_blacklist_scan(&req, &header_path, &mut result);
+    }
 
     for tag in &req.tags {
         match tag.as_str() {
@@ -181,6 +233,9 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
                     );
                 }
             }
+            "CC-BLACKLIST" => {
+                // Already handled by run_blacklist_scan above.
+            }
             _ => {
                 // Unknown tag: ignore for forward-compatibility.
             }
@@ -190,9 +245,53 @@ pub fn run_validation(req: ValidationRequest) -> ValidationResult {
     result
 }
 
+/* ---------- Blacklist scanning: contamination reporting ---------- */
+
+fn run_blacklist_scan(
+    req: &ValidationRequest,
+    header_path: &Option<String>,
+    result: &mut ValidationResult,
+) {
+    // Minimal built-in blacklist for (*/)-style patterns.
+    // NOTE: the actual patterns should be loaded from specsinvariants.aln or a
+    // dedicated blacklist spec, this is just the core engine default.
+    let patterns: &[(&str, &str)] = &[
+        // (pattern, severity)
+        ("Rust Syn", "block"),
+        ("Tree-Sitter", "block"),
+    ];
+
+    let path = header_path
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "<unknown>".to_string());
+
+    for (line_idx, line) in req.code.lines().enumerate() {
+        for (pat, severity) in patterns {
+            if let Some(col_idx) = line.find(pat) {
+                let context = line.trim().to_string();
+                let report = ContaminationReport {
+                    pattern: pat.to_string(),
+                    exact_match: pat.to_string(),
+                    surrounding_context: context,
+                    severity: severity.to_string(),
+                    path: path.clone(),
+                    line: (line_idx as u32) + 1,
+                    column: (col_idx as u32) + 1,
+                };
+                result.add_contamination(report);
+            }
+        }
+    }
+}
+
 /* ---------- Tier 1: Simple string / byte scans ---------- */
 
 /// Extracts the FILE header path from the first 10 lines if present.
+/// Accepts headers like:
+///   FILE: ./src/core/engine/validator.rs
+///   // FILE: ./src/core/engine/validator.rs
+///   <!-- FILE: ./src/core/engine/validator.rs -->
 fn extract_file_header_path(code: &str) -> Option<String> {
     for (i, line) in code.lines().enumerate() {
         if i >= 10 {
@@ -231,11 +330,12 @@ fn check_cc_vol(code: &str, n_min: usize) -> bool {
 /// CC-LANG via extension: .rs, .js, .cpp, .h, .aln, .md only.
 fn check_cc_lang_path(path: &str) -> bool {
     let p = Path::new(path);
-    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
-    matches!(
-        ext.as_str(),
-        "rs" | "js" | "cpp" | "h" | "aln" | "md"
-    )
+    let ext = p
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(ext.as_str(), "rs" | "js" | "cpp" | "h" | "aln" | "md")
 }
 
 fn check_cc_full(code: &str) -> bool {
@@ -389,12 +489,7 @@ fn extract_identifier_after_keyword(line: &str) -> String {
         return String::new();
     }
     for (i, tok) in tokens.iter().enumerate() {
-        if *tok == "fn"
-            || *tok == "struct"
-            || *tok == "impl"
-            || *tok == "mod"
-            || *tok == "class"
-        {
+        if *tok == "fn" || *tok == "struct" || *tok == "impl" || *tok == "mod" || *tok == "class" {
             if let Some(next) = tokens.get(i + 1) {
                 return (*next).to_string();
             }
