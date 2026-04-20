@@ -1,0 +1,9 @@
+[package]
+name = "oss-du"
+version = "0.1.0"
+edition = "2021"
+description = "Custom std-only disk usage scanner for OSSFS-backed volumes."
+license = "MIT"
+
+[dependencies]
+# Sovereign: no external crates, std-only.
